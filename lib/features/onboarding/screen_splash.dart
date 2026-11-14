@@ -57,7 +57,7 @@ class _ScreenSplashState extends State<ScreenSplash>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.heroDark,
+      backgroundColor: AppColors.background,
       body: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: _goToLogin,
@@ -78,9 +78,9 @@ class _ScreenSplashState extends State<ScreenSplash>
               child: Column(
                 children: [
                   const Spacer(flex: 5),
-                  // Pure Brand Mark — No concentric rings, no extra boxes
+                  // Pure Brand Mark: No concentric rings, no extra boxes
                   const UcapKasLogo(
-                    size: 76,
+                    size: 72,
                     showWordmark: false,
                   ),
                   const SizedBox(height: 22),
@@ -95,7 +95,7 @@ class _ScreenSplashState extends State<ScreenSplash>
                           fontWeight: FontWeight.w700,
                           letterSpacing: -0.8,
                           height: 1.1,
-                          color: Colors.white,
+                          color: AppColors.textPrimary,
                         ),
                       ),
                       Text(
@@ -105,40 +105,30 @@ class _ScreenSplashState extends State<ScreenSplash>
                           fontWeight: FontWeight.w700,
                           letterSpacing: -0.8,
                           height: 1.1,
-                          color: AppColors.primaryTealBright,
+                          color: AppColors.primaryTeal,
                         ),
                       ),
                     ],
                   ),
                   const SizedBox(height: 8),
-                  // Single grounded Indonesian line — zero buzzwords
+                  // Single grounded Indonesian line, zero buzzwords
                   Text(
                     'Tinggal ngomong, kas rapi.',
                     style: GoogleFonts.inter(
                       fontSize: 14,
                       fontWeight: FontWeight.w400,
                       letterSpacing: -0.1,
-                      color: AppColors.darkTextMuted,
+                      color: AppColors.textSecondary,
                     ),
                   ),
                   const Spacer(flex: 6),
-                  // Minimal bottom anchor
-                  Container(
-                    width: 24,
-                    height: 3,
-                    decoration: BoxDecoration(
-                      color: AppColors.primaryTeal,
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
-                  const SizedBox(height: 14),
                   Text(
                     'Buku Kas Usaha & Harian',
                     style: GoogleFonts.inter(
                       fontSize: 11.5,
                       fontWeight: FontWeight.w500,
                       letterSpacing: 0.2,
-                      color: const Color(0xFF475569),
+                      color: AppColors.textMuted,
                     ),
                   ),
                   const SizedBox(height: 24),

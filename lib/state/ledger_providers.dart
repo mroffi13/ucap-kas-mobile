@@ -60,6 +60,7 @@ final txSearchQueryProvider = StateProvider<String>((ref) => '');
 final txFilterCategoryProvider = StateProvider<String>((ref) => 'Semua');
 final notaFilterStatusProvider = StateProvider<NotaStatus?>((ref) => null);
 final selectedNotaNumberProvider = StateProvider<String?>((ref) => null);
+final balanceVisibleProvider = StateProvider<bool>((ref) => true);
 
 final selectedNotaProvider = Provider<NotaInvoice>((ref) {
   final list = ref.watch(notaListProvider);

@@ -28,7 +28,18 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Masuk Lewat Google'), findsOneWidget);
-    expect(find.text('Masuk Lewat WhatsApp'), findsOneWidget);
+    expect(find.text('Servis AC Mobil Avanza'), findsOneWidget);
+    expect(find.text('+Rp 450.000'), findsOneWidget);
+
+    // 2b. Test interactive Persona Switcher on Onboarding screen
+    await tester.tap(find.text('Rumah Tangga'));
+    await tester.pumpAndSettle();
+    expect(find.text('Beras 5kg & Telur Ayam 1kg'), findsOneWidget);
+    expect(find.text('-Rp 103.000'), findsOneWidget);
+
+    await tester.tap(find.text('UMKM / Jasa'));
+    await tester.pumpAndSettle();
+    expect(find.text('Servis AC Mobil Avanza'), findsOneWidget);
 
     // 3. Tap 'Masuk Lewat Google' to enter Dashboard (Screen 1)
     await tester.tap(find.text('Masuk Lewat Google'));
@@ -37,6 +48,17 @@ void main() {
     expect(find.byType(UcapKasLogo), findsOneWidget);
     expect(find.text('Rp 14.850.000'), findsOneWidget);
     expect(find.text('Bicara'), findsOneWidget);
+
+    // 3b. Test eye icon balance visibility toggle on Dashboard Hero Card
+    await tester.tap(find.byKey(const Key('btn_toggle_balance_visibility')));
+    await tester.pumpAndSettle();
+    expect(find.text('Rp ••••••••'), findsOneWidget);
+    expect(find.text('+Rp •••••••'), findsOneWidget);
+    expect(find.text('-Rp •••••••'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('btn_toggle_balance_visibility')));
+    await tester.pumpAndSettle();
+    expect(find.text('Rp 14.850.000'), findsOneWidget);
 
     // 4. Navigate to Nota WA tab
     await tester.tap(find.text('Nota'));

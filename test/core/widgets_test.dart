@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ucapkas_app/core/widgets/ucapkas_bottom_nav.dart';
 import 'package:ucapkas_app/core/widgets/ucapkas_logo.dart';
+import 'package:ucapkas_app/core/widgets/ucapkas_toast.dart';
 import 'package:ucapkas_app/features/manual_entry/screen_3_catat_manual.dart';
 import 'package:ucapkas_app/features/voice_entry/screen_2_voice_sheet.dart';
 
@@ -222,5 +223,36 @@ void main() {
       find.byKey(const Key('input_invoice_customer')),
     );
     expect(customerWidget.controller?.text, 'Pak Reza');
+  });
+
+  testWidgets('UcapKasToast displays reusable toast card for Kas Masuk',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => ElevatedButton(
+              onPressed: () {
+                UcapKasToast.showKasMasuk(
+                  context,
+                  title: 'Servis AC Mobil Avanza',
+                  amount: 450000,
+                  subtitle: 'Servis • Tunai',
+                );
+              },
+              child: const Text('Trigger Toast'),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Trigger Toast'));
+    await tester.pump();
+
+    expect(find.byKey(const Key('ucapkas_toast_card')), findsOneWidget);
+    expect(find.text('Kas Masuk Tersimpan'), findsOneWidget);
+    expect(find.text('Servis AC Mobil Avanza'), findsOneWidget);
+    expect(find.text('+Rp 450.000'), findsOneWidget);
   });
 }

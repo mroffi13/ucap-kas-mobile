@@ -5,7 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
-import '../../core/utils/rupiah_formatter.dart';
+import '../../core/widgets/ucapkas_toast.dart';
 import '../../core/widgets/workspace_pill.dart';
 import '../../data/models/cash_transaction.dart';
 import '../../state/ledger_providers.dart';
@@ -154,16 +154,23 @@ class _Screen3CatatManualState extends ConsumerState<Screen3CatatManual>
           ),
         );
 
-    if (stayOnPage) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Tersimpan: $titleText (${RupiahFormatter.format(effectiveNominal)})',
-          ),
-          behavior: SnackBarBehavior.floating,
-          duration: const Duration(seconds: 2),
-        ),
+    if (_isKasMasuk) {
+      UcapKasToast.showKasMasuk(
+        context,
+        title: titleText,
+        amount: effectiveNominal,
+        subtitle: '$_category • $_paymentMethod',
       );
+    } else {
+      UcapKasToast.showKasKeluar(
+        context,
+        title: titleText,
+        amount: effectiveNominal,
+        subtitle: '$_category • $_paymentMethod',
+      );
+    }
+
+    if (stayOnPage) {
       _updateNominalValue(0);
       setState(() {
         _descController.clear();

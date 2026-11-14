@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/rupiah_formatter.dart';
+import '../../core/widgets/ucapkas_toast.dart';
 
 class Screen5UbahRincian extends StatefulWidget {
   const Screen5UbahRincian({super.key});
@@ -69,23 +70,23 @@ class _Screen5UbahRincianState extends State<Screen5UbahRincian> {
   void initState() {
     super.initState();
     _storeController =
-        TextEditingController(text: 'Toko Bahan Kue Berkah Jaya');
+        TextEditingController(text: 'Toko Onderdil Motor & Mobil Jaya');
     _categoryController = TextEditingController(text: 'Bahan Baku');
     _items = [
       _EditableDetailItem(
-        name: 'Tepung Terigu Cakra 25kg',
-        quantity: 1,
-        unitPrice: 245000,
-      ),
-      _EditableDetailItem(
-        name: 'Gula Pasir Gulaku 10kg',
-        quantity: 1,
-        unitPrice: 165000,
-      ),
-      _EditableDetailItem(
-        name: 'Ragi Instan Fermipan & Plastik',
+        name: 'Kampas Rem Depan Honda Beat (2 Set)',
         quantity: 2,
-        unitPrice: 20000,
+        unitPrice: 45000,
+      ),
+      _EditableDetailItem(
+        name: 'Oli Mesin Shell Advance AX7 1L',
+        quantity: 1,
+        unitPrice: 65000,
+      ),
+      _EditableDetailItem(
+        name: 'Cairan Pembersih Karburator & Baut',
+        quantity: 1,
+        unitPrice: 25000,
       ),
     ];
   }
@@ -137,9 +138,9 @@ class _Screen5UbahRincianState extends State<Screen5UbahRincian> {
     setState(() {
       _items.add(
         _EditableDetailItem(
-          name: 'Mentega Blueband 2kg',
+          name: 'Busi NGK Iridium',
           quantity: 1,
-          unitPrice: 65000,
+          unitPrice: 35000,
         ),
       );
     });
@@ -425,7 +426,21 @@ class _Screen5UbahRincianState extends State<Screen5UbahRincian> {
                   borderRadius: BorderRadius.circular(12),
                 ),
               ),
-              onPressed: () => context.go('/dashboard'),
+              onPressed: () {
+                final storeName = _storeController.text.trim().isEmpty
+                    ? 'Belanja Struk'
+                    : _storeController.text.trim();
+                final catName = _categoryController.text.trim().isEmpty
+                    ? 'Bahan Baku'
+                    : _categoryController.text.trim();
+                UcapKasToast.showKasKeluar(
+                  context,
+                  title: storeName,
+                  amount: _grandTotal,
+                  subtitle: '$catName • ${_items.length} Barang',
+                );
+                context.go('/dashboard');
+              },
               child: Text(
                 'Simpan Perubahan & Catat Kas',
                 style: GoogleFonts.inter(

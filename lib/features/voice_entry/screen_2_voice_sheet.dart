@@ -7,6 +7,7 @@ import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/rupiah_formatter.dart';
 import '../../core/utils/slang_parser.dart';
+import '../../core/widgets/ucapkas_toast.dart';
 import '../../core/widgets/workspace_pill.dart';
 import '../../data/models/cash_transaction.dart';
 import '../../data/models/nota_invoice.dart';
@@ -394,6 +395,21 @@ class _Screen2VoiceSheetState extends ConsumerState<Screen2VoiceSheet>
             items: List.unmodifiable(lineItems),
           ),
         );
+    if (_isKasMasuk) {
+      UcapKasToast.showKasMasuk(
+        context,
+        title: itemTitle,
+        amount: total,
+        subtitle: '$categoryText • $_selectedPayment',
+      );
+    } else {
+      UcapKasToast.showKasKeluar(
+        context,
+        title: itemTitle,
+        amount: total,
+        subtitle: '$categoryText • $_selectedPayment',
+      );
+    }
     context.go('/kas');
   }
 
@@ -428,6 +444,13 @@ class _Screen2VoiceSheetState extends ConsumerState<Screen2VoiceSheet>
           ),
         );
     ref.read(selectedNotaNumberProvider.notifier).state = invoiceNumber;
+    UcapKasToast.showInfo(
+      context,
+      headerLabel: 'Nota WA Siap Dikirim',
+      title: '$customer • $invoiceNumber',
+      subtitle: itemSummary,
+      badgeText: RupiahFormatter.format(total),
+    );
     context.go('/nota');
   }
 

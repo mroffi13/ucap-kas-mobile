@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/widgets/pro_badge.dart';
+import '../../core/widgets/ucapkas_toast.dart';
 import '../../data/models/cash_transaction.dart';
 import '../../state/ledger_providers.dart';
 
@@ -304,6 +305,12 @@ class Screen4FotoStruk extends ConsumerWidget {
                               hasReceiptPhoto: true,
                             ),
                           );
+                      UcapKasToast.showKasKeluar(
+                        context,
+                        title: 'Toko Bahan Kue Berkah Jaya',
+                        amount: 450000,
+                        subtitle: 'Bahan Baku • Foto Struk (4 Barang)',
+                      );
                       context.go('/dashboard');
                     },
                     child: const Text(

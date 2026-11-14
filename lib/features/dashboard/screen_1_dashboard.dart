@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -18,7 +19,27 @@ class Screen1Dashboard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final workspace = ref.watch(activeWorkspaceProvider);
-    final transactions = ref.watch(transactionsProvider).take(4).toList();
+    final allTransactions = ref.watch(transactionsProvider);
+    final transactions = allTransactions.take(4).toList();
+    final isBalanceVisible = ref.watch(balanceVisibleProvider);
+
+    // Live calculation so newly added transactions update the hero card
+    int liveInflowDelta = 0;
+    int liveOutflowDelta = 0;
+    for (final tx in allTransactions) {
+      if (tx.amount >= 0) {
+        liveInflowDelta += tx.amount;
+      } else {
+        liveOutflowDelta += tx.amount.abs();
+      }
+    }
+    const seededInflow = 450000 + 95000 + 1250000;
+    const seededOutflow = 180000 + 45000 + 320000;
+    final extraInflow = (liveInflowDelta - seededInflow).clamp(0, 999999999);
+    final extraOutflow = (liveOutflowDelta - seededOutflow).clamp(0, 999999999);
+    final currentBalance = workspace.balance + extraInflow - extraOutflow;
+    final currentMonthlyInflow = workspace.monthlyInflow + extraInflow;
+    final currentMonthlyOutflow = workspace.monthlyOutflow + extraOutflow;
 
     return Scaffold(
       extendBody: true,
@@ -113,28 +134,79 @@ class Screen1Dashboard extends ConsumerWidget {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text(
-                          'Total Saldo Kas',
-                          style: GoogleFonts.inter(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w500,
-                            color: AppColors.darkTextMuted,
+                        Flexible(
+                          child: Text(
+                            'Total Saldo Kas',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: GoogleFonts.inter(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                              color: AppColors.darkTextMuted,
+                            ),
                           ),
                         ),
-                        const Icon(
-                          Icons.visibility_outlined,
-                          size: 17,
-                          color: AppColors.darkTextMuted,
+                        const SizedBox(width: 8),
+                        GestureDetector(
+                          key: const Key('btn_toggle_balance_visibility'),
+                          behavior: HitTestBehavior.opaque,
+                          onTap: () {
+                            HapticFeedback.selectionClick();
+                            ref.read(balanceVisibleProvider.notifier).state =
+                                !isBalanceVisible;
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 5,
+                            ),
+                            decoration: BoxDecoration(
+                              color: AppColors.heroCardSecondary,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: AppColors.darkBorder),
+                            ),
+                            child: Icon(
+                              isBalanceVisible
+                                  ? Icons.visibility_outlined
+                                  : Icons.visibility_off_outlined,
+                              size: 16,
+                              color: isBalanceVisible
+                                  ? AppColors.darkTextMuted
+                                  : AppColors.incomeEmeraldBright,
+                            ),
+                          ),
                         ),
                       ],
                     ),
                     const SizedBox(height: 6),
-                    Text(
-                      RupiahFormatter.format(workspace.balance),
-                      style: AppTheme.numStyle(
-                        fontSize: 30,
-                        color: Colors.white,
-                        letterSpacing: -0.8,
+                    GestureDetector(
+                      onTap: () {
+                        HapticFeedback.selectionClick();
+                        ref.read(balanceVisibleProvider.notifier).state =
+                            !isBalanceVisible;
+                      },
+                      child: AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 180),
+                        layoutBuilder: (currentChild, previousChildren) {
+                          return Stack(
+                            alignment: Alignment.centerLeft,
+                            children: [
+                              ...previousChildren,
+                              if (currentChild != null) currentChild,
+                            ],
+                          );
+                        },
+                        child: Text(
+                          isBalanceVisible
+                              ? RupiahFormatter.format(currentBalance)
+                              : 'Rp ••••••••',
+                          key: ValueKey<bool>(isBalanceVisible),
+                          style: AppTheme.numStyle(
+                            fontSize: 30,
+                            color: Colors.white,
+                            letterSpacing: isBalanceVisible ? -0.8 : 1.5,
+                          ),
+                        ),
                       ),
                     ),
                     const SizedBox(height: 8),
@@ -192,10 +264,12 @@ class Screen1Dashboard extends ConsumerWidget {
                               ),
                               const SizedBox(height: 4),
                               Text(
-                                RupiahFormatter.format(
-                                  workspace.monthlyInflow,
-                                  showSign: true,
-                                ),
+                                isBalanceVisible
+                                    ? RupiahFormatter.format(
+                                        currentMonthlyInflow,
+                                        showSign: true,
+                                      )
+                                    : '+Rp •••••••',
                                 style: AppTheme.numStyle(
                                   fontSize: 14.5,
                                   color: AppColors.incomeEmeraldBright,
@@ -233,10 +307,12 @@ class Screen1Dashboard extends ConsumerWidget {
                               ),
                               const SizedBox(height: 4),
                               Text(
-                                RupiahFormatter.format(
-                                  -workspace.monthlyOutflow,
-                                  showSign: true,
-                                ),
+                                isBalanceVisible
+                                    ? RupiahFormatter.format(
+                                        -currentMonthlyOutflow,
+                                        showSign: true,
+                                      )
+                                    : '-Rp •••••••',
                                 style: AppTheme.numStyle(
                                   fontSize: 14.5,
                                   color: AppColors.expenseRoseBright,
