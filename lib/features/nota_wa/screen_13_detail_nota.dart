@@ -5,17 +5,338 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/utils/invoice_pdf_generator.dart';
+import '../../core/utils/native_file_saver.dart';
 import '../../core/utils/rupiah_formatter.dart';
 import '../../core/widgets/ucapkas_toast.dart';
 import '../../data/models/cash_transaction.dart';
 import '../../data/models/nota_invoice.dart';
+import '../../data/models/workspace.dart';
+import '../../state/auth_provider.dart';
 import '../../state/ledger_providers.dart';
 
-class Screen13DetailNota extends ConsumerWidget {
+class Screen13DetailNota extends ConsumerStatefulWidget {
   const Screen13DetailNota({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<Screen13DetailNota> createState() => _Screen13DetailNotaState();
+}
+
+class _Screen13DetailNotaState extends ConsumerState<Screen13DetailNota> {
+  bool _isDownloadingPdf = false;
+  SavedPdfResult? _lastSavedPdf;
+
+  Future<SavedPdfResult?> _prepareAndSavePdf({
+    required NotaInvoice nota,
+    required Workspace ws,
+  }) async {
+    setState(() => _isDownloadingPdf = true);
+    try {
+      Uint8List pdfBytes;
+      final safeNumber = nota.number
+          .replaceAll('/', '-')
+          .replaceAll('\\', '-')
+          .replaceAll(' ', '_');
+      final filename = '$safeNumber.pdf';
+
+      final isAuth = ref.read(authProvider).isAuthenticated;
+      if (isAuth && ws.id.isNotEmpty && nota.id.isNotEmpty) {
+        try {
+          pdfBytes = await ref
+              .read(invoiceRepositoryProvider)
+              .downloadInvoicePdf(
+                workspaceId: ws.id,
+                invoiceId: nota.id,
+              );
+        } catch (_) {
+          final generated = InvoicePdfGenerator.generate(
+            nota: nota,
+            workspace: ws,
+          );
+          pdfBytes = generated.bytes;
+        }
+      } else {
+        final generated = InvoicePdfGenerator.generate(
+          nota: nota,
+          workspace: ws,
+        );
+        pdfBytes = generated.bytes;
+      }
+
+      final saved = await NativeFileSaver.savePdf(
+        bytes: pdfBytes,
+        filename: filename,
+      );
+      if (mounted) {
+        setState(() => _lastSavedPdf = saved);
+      }
+      return saved;
+    } finally {
+      if (mounted) {
+        setState(() => _isDownloadingPdf = false);
+      }
+    }
+  }
+
+  Future<void> _handleDownloadPdf({
+    required NotaInvoice nota,
+    required Workspace ws,
+    required String waMessage,
+  }) async {
+    if (_isDownloadingPdf) return;
+    HapticFeedback.lightImpact();
+
+    try {
+      final saved = await _prepareAndSavePdf(nota: nota, ws: ws);
+      if (!mounted || saved == null) return;
+
+      _showPdfSavedSheet(
+        context: context,
+        nota: nota,
+        saved: saved,
+        waMessage: waMessage,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      UcapKasToast.showInfo(
+        context,
+        headerLabel: 'Gagal Mengunduh PDF',
+        title: nota.number,
+        subtitle: e.toString(),
+        badgeText: 'ERR',
+      );
+    }
+  }
+
+  Future<void> _handleShareViaWhatsApp({
+    required NotaInvoice nota,
+    required Workspace ws,
+    required String waMessage,
+  }) async {
+    if (_isDownloadingPdf) return;
+    HapticFeedback.lightImpact();
+
+    final saved = _lastSavedPdf ??
+        await _prepareAndSavePdf(
+          nota: nota,
+          ws: ws,
+        );
+    if (!mounted) return;
+
+    if (saved != null) {
+      final shared = await NativeFileSaver.sharePdf(
+        saved: saved,
+        text: waMessage,
+        title: 'Kirim ${nota.number} ke WhatsApp',
+      );
+      if (shared) return;
+    }
+
+    await Clipboard.setData(ClipboardData(text: waMessage));
+    if (!mounted) return;
+    UcapKasToast.showInfo(
+      context,
+      headerLabel: 'Siap Dikirim ke WhatsApp',
+      title: '${nota.number} · ${nota.clientName}',
+      subtitle: 'Pesan tagihan & PDF siap dibagikan ke pelanggan',
+      badgeText: 'WA',
+    );
+  }
+
+  void _showPdfSavedSheet({
+    required BuildContext context,
+    required NotaInvoice nota,
+    required SavedPdfResult saved,
+    required String waMessage,
+  }) {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetCtx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 14, 20, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: AppColors.borderStrong,
+                      borderRadius: BorderRadius.circular(99),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 18),
+                Row(
+                  children: [
+                    Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        color: AppColors.incomeSoft,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(
+                        Icons.picture_as_pdf_rounded,
+                        color: AppColors.primaryTeal,
+                        size: 22,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Invoice PDF Berhasil Diunduh',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 15.5,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.textPrimary,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            '${nota.number} · ${nota.clientName}',
+                            style: GoogleFonts.inter(
+                              fontSize: 12.5,
+                              color: AppColors.textSecondary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.background,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: AppColors.border),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.folder_outlined,
+                        size: 16,
+                        color: AppColors.textMuted,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          saved.displayLocation,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppTheme.numStyle(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w500,
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () async {
+                          Navigator.of(sheetCtx).pop();
+                          final opened = await NativeFileSaver.openPdf(saved);
+                          if (!opened && context.mounted) {
+                            UcapKasToast.showInfo(
+                              context,
+                              headerLabel: 'File PDF Tersimpan',
+                              title: saved.displayLocation,
+                              subtitle:
+                                  'Buka melalui aplikasi File Manager / Downloads',
+                              badgeText: 'PDF',
+                            );
+                          }
+                        },
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: AppColors.textPrimary,
+                          side: const BorderSide(color: AppColors.borderStrong),
+                          minimumSize: const Size.fromHeight(46),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        icon: const Icon(Icons.open_in_new_rounded, size: 16),
+                        label: Text(
+                          'Buka PDF',
+                          style: GoogleFonts.inter(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: () async {
+                          Navigator.of(sheetCtx).pop();
+                          final shared = await NativeFileSaver.sharePdf(
+                            saved: saved,
+                            text: waMessage,
+                            title: 'Kirim ${nota.number} via WhatsApp',
+                          );
+                          if (!shared && context.mounted) {
+                            UcapKasToast.showInfo(
+                              context,
+                              headerLabel: 'PDF Siap Dibagikan',
+                              title: saved.displayLocation,
+                              subtitle: 'Lampirkan file PDF ke chat WhatsApp',
+                              badgeText: 'WA',
+                            );
+                          }
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.primaryTeal,
+                          foregroundColor: Colors.white,
+                          elevation: 0,
+                          minimumSize: const Size.fromHeight(46),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        icon: const Icon(Icons.share_rounded, size: 16),
+                        label: Text(
+                          'Bagikan / WA',
+                          style: GoogleFonts.inter(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final nota = ref.watch(selectedNotaProvider);
     final ws = ref.watch(activeWorkspaceProvider);
     final isPaid = nota.status == NotaStatus.lunas;
@@ -81,22 +402,29 @@ class Screen13DetailNota extends ConsumerWidget {
           Padding(
             padding: const EdgeInsets.only(right: 14),
             child: TextButton.icon(
-              onPressed: () {
-                UcapKasToast.showInfo(
-                  context,
-                  headerLabel: 'Nota PDF Disimpan',
-                  title: '${nota.number} · ${nota.clientName}',
-                  subtitle: 'Siap dikirim ke WhatsApp pelanggan',
-                  badgeText: 'PDF',
-                );
-              },
-              icon: const Icon(
-                Icons.download_rounded,
-                size: 16,
-                color: AppColors.primaryTeal,
-              ),
+              onPressed: _isDownloadingPdf
+                  ? null
+                  : () => _handleDownloadPdf(
+                        nota: nota,
+                        ws: ws,
+                        waMessage: waMessage,
+                      ),
+              icon: _isDownloadingPdf
+                  ? const SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: AppColors.primaryTeal,
+                      ),
+                    )
+                  : const Icon(
+                      Icons.download_rounded,
+                      size: 16,
+                      color: AppColors.primaryTeal,
+                    ),
               label: Text(
-                'Unduh PDF',
+                _isDownloadingPdf ? 'Mengunduh...' : 'Unduh PDF',
                 style: GoogleFonts.inter(
                   fontSize: 12.5,
                   fontWeight: FontWeight.w600,
@@ -406,15 +734,11 @@ class Screen13DetailNota extends ConsumerWidget {
           ),
           child: isPaid
               ? ElevatedButton.icon(
-                  onPressed: () {
-                    UcapKasToast.showInfo(
-                      context,
-                      headerLabel: 'Membuka WhatsApp',
-                      title: 'Kirim bukti lunas ke ${nota.clientName}',
-                      subtitle: nota.number,
-                      badgeText: 'WA',
-                    );
-                  },
+                  onPressed: () => _handleShareViaWhatsApp(
+                    nota: nota,
+                    ws: ws,
+                    waMessage: waMessage,
+                  ),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.primaryTeal,
                     foregroundColor: Colors.white,
@@ -442,20 +766,8 @@ class Screen13DetailNota extends ConsumerWidget {
                           HapticFeedback.mediumImpact();
                           ref
                               .read(notaListProvider.notifier)
-                              .markAsPaid(nota.number);
-                          ref
-                              .read(transactionsProvider.notifier)
-                              .addTransaction(
-                                CashTransaction(
-                                  id: 'tx-inv-${DateTime.now().millisecondsSinceEpoch}',
-                                  title: 'Pelunasan ${nota.clientName}',
-                                  category: 'Pelunasan Invoice',
-                                  paymentMethod: 'Transfer',
-                                  timeLabel: 'Baru saja',
-                                  dateGroup: 'HARI INI • RABU, 11 NOV 2026',
-                                  amount: nota.amount,
-                                  notaRef: nota.number,
-                                ),
+                              .markAsPaid(
+                                nota.id.isNotEmpty ? nota.id : nota.number,
                               );
                           context.go('/nota');
                         },
@@ -480,16 +792,11 @@ class Screen13DetailNota extends ConsumerWidget {
                     Expanded(
                       flex: 3,
                       child: ElevatedButton.icon(
-                        onPressed: () {
-                          UcapKasToast.showInfo(
-                            context,
-                            headerLabel: 'Membuka WhatsApp',
-                            title: 'Menagih ${nota.clientName}',
-                            subtitle:
-                                '${nota.number} · ${RupiahFormatter.format(nota.amount)}',
-                            badgeText: 'WA',
-                          );
-                        },
+                        onPressed: () => _handleShareViaWhatsApp(
+                          nota: nota,
+                          ws: ws,
+                          waMessage: waMessage,
+                        ),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: AppColors.heroDark,
                           foregroundColor: Colors.white,

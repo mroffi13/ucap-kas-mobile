@@ -650,8 +650,9 @@ class _Screen2VoiceSheetState extends ConsumerState<Screen2VoiceSheet>
     context.go('/kas');
   }
 
-  void _saveAndSendVoiceInvoice() {
+  Future<void> _saveAndSendVoiceInvoice() async {
     HapticFeedback.mediumImpact();
+    final isAuth = ref.read(authProvider).isAuthenticated;
     final total = _totalAmount;
     final lineItems = _invoiceItems.map((e) => e.toLineItem()).toList();
     final customer = _invoiceCustomerController.text.trim().isEmpty
@@ -661,30 +662,43 @@ class _Screen2VoiceSheetState extends ConsumerState<Screen2VoiceSheet>
         ? 'WA Pelanggan'
         : 'WA: ${_invoiceContactController.text.trim()}';
     final dueDate = _invoiceDueDateController.text.trim().isEmpty
-        ? '12 November 2026'
+        ? '7 Hari Lagi'
         : _invoiceDueDateController.text.trim();
     final itemSummary = lineItems.map((e) => '${e.quantity}x ${e.name}').join(', ');
-    final invoiceNumber =
-        'NOTA/2026/${1109 + ref.read(notaListProvider).length}';
+    final tempId = isAuth ? 'temp-${DateTime.now().millisecondsSinceEpoch}' : '';
+    final invoiceNumber = isAuth
+        ? ''
+        : 'NOTA/2026/${1109 + ref.read(notaListProvider).length}';
 
-    ref.read(notaListProvider.notifier).addNota(
+    await ref.read(notaListProvider.notifier).addNota(
           NotaInvoice(
+            id: tempId,
             number: invoiceNumber,
             clientName: '$customer — $itemSummary',
             clientContact: contact,
-            subtitle: '$invoiceNumber • Jatuh Tempo $dueDate',
-            dateIssued: '14 Nov 2026',
+            subtitle: invoiceNumber.isEmpty
+                ? 'Jatuh Tempo $dueDate'
+                : '$invoiceNumber • Jatuh Tempo $dueDate',
+            dateIssued: 'Hari Ini',
             dueDateLabel: 'Jatuh Tempo: $dueDate',
             amount: total,
             status: NotaStatus.menunggu,
             items: List.unmodifiable(lineItems),
           ),
         );
-    ref.read(selectedNotaNumberProvider.notifier).state = invoiceNumber;
+    if (!mounted) return;
+    if (invoiceNumber.isNotEmpty) {
+      ref.read(selectedNotaNumberProvider.notifier).state = invoiceNumber;
+    } else {
+      final latest = ref.read(notaListProvider);
+      if (latest.isNotEmpty) {
+        ref.read(selectedNotaNumberProvider.notifier).state = latest.first.number;
+      }
+    }
     UcapKasToast.showInfo(
       context,
       headerLabel: 'Nota WA Siap Dikirim',
-      title: '$customer • $invoiceNumber',
+      title: customer,
       subtitle: itemSummary,
       badgeText: RupiahFormatter.format(total),
     );

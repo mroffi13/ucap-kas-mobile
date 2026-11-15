@@ -8,6 +8,7 @@ import '../../core/theme/app_theme.dart';
 import '../../core/widgets/ucapkas_toast.dart';
 import '../../core/widgets/workspace_pill.dart';
 import '../../data/models/cash_transaction.dart';
+import '../../state/auth_provider.dart';
 import '../../state/ledger_providers.dart';
 
 class Screen3CatatManual extends ConsumerStatefulWidget {
@@ -20,7 +21,8 @@ class Screen3CatatManual extends ConsumerStatefulWidget {
 class _Screen3CatatManualState extends ConsumerState<Screen3CatatManual>
     with SingleTickerProviderStateMixin {
   bool _isKasMasuk = true;
-  int _nominal = 450000;
+  int _nominal = 0;
+  bool _isSubmitting = false;
   late final AnimationController _modeController;
   late final Animation<double> _modeAnim;
   late final TextEditingController _nominalController;
@@ -52,6 +54,7 @@ class _Screen3CatatManualState extends ConsumerState<Screen3CatatManual>
   @override
   void initState() {
     super.initState();
+    final isAuth = ref.read(authProvider).isAuthenticated;
     // 0.0 = Kas Masuk, 1.0 = Kas Keluar — single synchronized 60fps vsync ticker
     _modeController = AnimationController(
       vsync: this,
@@ -62,11 +65,14 @@ class _Screen3CatatManualState extends ConsumerState<Screen3CatatManual>
       parent: _modeController,
       curve: Curves.fastOutSlowIn,
     );
+    _nominal = isAuth ? 0 : 450000;
     _nominalController = TextEditingController(
       text: _formatNumberOnly(_nominal),
     );
     _nominalFocusNode = FocusNode();
-    _descController = TextEditingController(text: 'Servis AC Mobil Avanza');
+    _descController = TextEditingController(
+      text: isAuth ? '' : 'Servis AC Mobil Avanza',
+    );
     _categoryController = TextEditingController(text: _category);
   }
 
@@ -136,23 +142,55 @@ class _Screen3CatatManualState extends ConsumerState<Screen3CatatManual>
     }
   }
 
-  void _saveTransaction({required bool stayOnPage}) {
+  Future<void> _saveTransaction({required bool stayOnPage}) async {
+    if (_isSubmitting) return;
+    final isAuth = ref.read(authProvider).isAuthenticated;
+
+    if (isAuth && _nominal <= 0) {
+      HapticFeedback.lightImpact();
+      UcapKasToast.showInfo(
+        context,
+        headerLabel: 'Lengkapi Data',
+        title: 'Nominal transaksi masih Rp 0',
+        subtitle: 'Masukkan jumlah uang masuk atau keluar terlebih dahulu',
+        badgeText: 'INFO',
+      );
+      _nominalFocusNode.requestFocus();
+      return;
+    }
+
     final effectiveNominal = _nominal > 0 ? _nominal : 50000;
     final titleText = _descController.text.trim().isEmpty
         ? (_isKasMasuk ? 'Pemasukan Kas' : 'Pengeluaran Kas')
         : _descController.text.trim();
 
-    ref.read(transactionsProvider.notifier).addTransaction(
+    setState(() => _isSubmitting = true);
+
+    final ok = await ref.read(transactionsProvider.notifier).addTransaction(
           CashTransaction(
             id: 'tx-${DateTime.now().millisecondsSinceEpoch}',
             title: titleText,
             category: _category,
             paymentMethod: _paymentMethod,
             timeLabel: 'Baru saja',
-            dateGroup: 'Hari Ini, Rabu 11 Nov 2026',
+            dateGroup: 'Hari Ini',
             amount: _isKasMasuk ? effectiveNominal : -effectiveNominal,
           ),
         );
+
+    if (!mounted) return;
+    setState(() => _isSubmitting = false);
+
+    if (!ok) {
+      UcapKasToast.showInfo(
+        context,
+        headerLabel: 'Gagal Menyimpan',
+        title: 'Catatan kas gagal disimpan ke server',
+        subtitle: 'Periksa koneksi internet Anda dan coba lagi',
+        badgeText: 'ERROR',
+      );
+      return;
+    }
 
     if (_isKasMasuk) {
       UcapKasToast.showKasMasuk(
@@ -977,7 +1015,9 @@ class _Screen3CatatManualState extends ConsumerState<Screen3CatatManual>
                   Expanded(
                     flex: 2,
                     child: OutlinedButton(
-                      onPressed: () => _saveTransaction(stayOnPage: true),
+                      onPressed: _isSubmitting
+                          ? null
+                          : () => _saveTransaction(stayOnPage: true),
                       style: OutlinedButton.styleFrom(
                         foregroundColor: AppColors.textPrimary,
                         side: const BorderSide(color: AppColors.borderStrong),
@@ -999,7 +1039,9 @@ class _Screen3CatatManualState extends ConsumerState<Screen3CatatManual>
                   Expanded(
                     flex: 3,
                     child: ElevatedButton(
-                      onPressed: () => _saveTransaction(stayOnPage: false),
+                      onPressed: _isSubmitting
+                          ? null
+                          : () => _saveTransaction(stayOnPage: false),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: accent,
                         foregroundColor: Colors.white,
@@ -1010,7 +1052,11 @@ class _Screen3CatatManualState extends ConsumerState<Screen3CatatManual>
                         ),
                       ),
                       child: Text(
-                        _isKasMasuk ? 'Simpan Kas Masuk' : 'Simpan Kas Keluar',
+                        _isSubmitting
+                            ? 'Menyimpan...'
+                            : (_isKasMasuk
+                                ? 'Simpan Kas Masuk'
+                                : 'Simpan Kas Keluar'),
                         style: GoogleFonts.inter(
                           fontSize: 13.5,
                           fontWeight: FontWeight.w600,

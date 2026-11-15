@@ -4,12 +4,19 @@ import '../data/models/cash_transaction.dart';
 import '../data/models/nota_invoice.dart';
 import '../data/models/workspace.dart';
 import '../data/repositories/ai_repository.dart';
+import '../data/repositories/invoice_repository.dart';
 import '../data/repositories/ledger_repository.dart';
 import '../data/repositories/mock_ledger_data.dart';
 import 'auth_provider.dart';
 
 final ledgerRepositoryProvider = Provider<LedgerRepository>((ref) {
   return RemoteLedgerRepository(
+    apiClient: ref.watch(apiClientProvider),
+  );
+});
+
+final invoiceRepositoryProvider = Provider<InvoiceRepository>((ref) {
+  return RemoteInvoiceRepository(
     apiClient: ref.watch(apiClientProvider),
   );
 });
@@ -146,6 +153,13 @@ class TransactionsNotifier extends Notifier<List<CashTransaction>> {
     }
   }
 
+  void prependSyncedTransaction(CashTransaction tx) {
+    final exists = state.any((item) => item.id == tx.id);
+    if (!exists) {
+      state = [tx, ...state];
+    }
+  }
+
   Future<bool> deleteTransaction(String transactionId) async {
     final prev = state;
     state = [
@@ -182,23 +196,194 @@ final transactionsProvider =
 
 class NotaListNotifier extends Notifier<List<NotaInvoice>> {
   @override
-  List<NotaInvoice> build() => MockLedgerData.initialNotas;
+  List<NotaInvoice> build() {
+    final isAuthenticated = ref.watch(
+      authProvider.select((s) => s.isAuthenticated),
+    );
+    final activeWorkspaceId = ref.watch(
+      activeWorkspaceProvider.select((w) => w.id),
+    );
 
-  void markAsPaid(String number) {
+    if (!isAuthenticated) {
+      return MockLedgerData.initialNotas;
+    }
+
+    Future.microtask(() => refreshFromServer(activeWorkspaceId));
+    return const [];
+  }
+
+  Future<void> refreshFromServer([String? workspaceId]) async {
+    final isAuth = ref.read(authProvider).isAuthenticated;
+    if (!isAuth) return;
+    final targetWsId = workspaceId ?? ref.read(activeWorkspaceProvider).id;
+    if (targetWsId.isEmpty) return;
+
+    try {
+      final repo = ref.read(invoiceRepositoryProvider);
+      final res = await repo.listInvoices(targetWsId);
+      if (ref.read(activeWorkspaceProvider).id == targetWsId) {
+        state = res.invoices;
+      }
+      if (res.workspaces.isNotEmpty) {
+        ref.read(authProvider.notifier).updateWorkspaces(res.workspaces);
+      }
+    } catch (e) {
+      debugPrint('[UcapKas Invoice] Failed to load invoices: $e');
+    }
+  }
+
+  Future<bool> markAsPaid(
+    String idOrNumber, {
+    String paymentMethod = 'Transfer',
+  }) async {
+    NotaInvoice? target;
+    for (final nota in state) {
+      if (nota.id == idOrNumber || nota.number == idOrNumber) {
+        target = nota;
+        break;
+      }
+    }
+    if (target == null) return false;
+
+    final prev = state;
     state = [
       for (final nota in state)
-        if (nota.number == number)
+        if (nota.id == target.id && nota.number == target.number)
           nota.copyWith(
             status: NotaStatus.lunas,
-            subtitle: '${nota.number} • Lunas (Kas)',
+            subtitle: '${nota.number} • Lunas ($paymentMethod)',
           )
         else
           nota,
     ];
+
+    final isAuth = ref.read(authProvider).isAuthenticated;
+    if (!isAuth) {
+      ref.read(transactionsProvider.notifier).prependSyncedTransaction(
+            CashTransaction(
+              id: 'tx-paid-${DateTime.now().millisecondsSinceEpoch}',
+              title: 'Pelunasan ${target.clientName}',
+              category: 'Pelunasan Invoice',
+              paymentMethod: paymentMethod,
+              timeLabel: 'Baru saja',
+              dateGroup: 'Hari Ini',
+              amount: target.amount,
+              customerName: target.clientName,
+              notaRef: target.number,
+              source: 'nota_sync',
+            ),
+          );
+      return true;
+    }
+
+    if (target.id.isEmpty) return false;
+    final wsId = ref.read(activeWorkspaceProvider).id;
+    try {
+      final repo = ref.read(invoiceRepositoryProvider);
+      final res = await repo.markInvoicePaid(
+        workspaceId: wsId,
+        invoiceId: target.id,
+        paymentMethod: paymentMethod,
+      );
+      state = [
+        for (final nota in state)
+          if (nota.id == res.invoice.id || nota.number == res.invoice.number)
+            res.invoice
+          else
+            nota,
+      ];
+      if (res.transaction != null) {
+        ref
+            .read(transactionsProvider.notifier)
+            .prependSyncedTransaction(res.transaction!);
+      }
+      if (res.workspaces.isNotEmpty) {
+        ref.read(authProvider.notifier).updateWorkspaces(res.workspaces);
+      }
+      return true;
+    } catch (e) {
+      debugPrint('[UcapKas Invoice] Failed to mark invoice paid: $e');
+      state = prev;
+      return false;
+    }
   }
 
-  void addNota(NotaInvoice nota) {
+  Future<bool> addNota(NotaInvoice nota) async {
     state = [nota, ...state];
+
+    final isAuth = ref.read(authProvider).isAuthenticated;
+    if (!isAuth) return true;
+
+    final wsId = ref.read(activeWorkspaceProvider).id;
+    try {
+      final repo = ref.read(invoiceRepositoryProvider);
+      final res = await repo.createInvoice(
+        workspaceId: wsId,
+        invoiceNumber: nota.number,
+        clientName: nota.clientName,
+        clientContact: nota.clientContact,
+        subtitle: nota.subtitle,
+        dueDateLabel: nota.dueDateLabel,
+        dueAt: nota.dueAt,
+        amount: nota.amount,
+        notes: nota.notes,
+        items: nota.items,
+      );
+      state = [
+        for (final item in state)
+          if (item.number == nota.number && item.id == nota.id)
+            res.invoice
+          else
+            item,
+      ];
+      if (ref.read(selectedNotaNumberProvider) == nota.number) {
+        ref.read(selectedNotaNumberProvider.notifier).state = res.invoice.number;
+      }
+      if (res.workspaces.isNotEmpty) {
+        ref.read(authProvider.notifier).updateWorkspaces(res.workspaces);
+      }
+      return true;
+    } catch (e) {
+      debugPrint('[UcapKas Invoice] Failed to create invoice on server: $e');
+      return false;
+    }
+  }
+
+  Future<bool> deleteNota(String idOrNumber) async {
+    NotaInvoice? target;
+    for (final nota in state) {
+      if (nota.id == idOrNumber || nota.number == idOrNumber) {
+        target = nota;
+        break;
+      }
+    }
+    if (target == null) return false;
+
+    final prev = state;
+    state = [
+      for (final nota in state)
+        if (nota.number != target.number || nota.id != target.id) nota,
+    ];
+
+    final isAuth = ref.read(authProvider).isAuthenticated;
+    if (!isAuth || target.id.isEmpty) return true;
+
+    final wsId = ref.read(activeWorkspaceProvider).id;
+    try {
+      final repo = ref.read(invoiceRepositoryProvider);
+      final workspaces = await repo.deleteInvoice(
+        workspaceId: wsId,
+        invoiceId: target.id,
+      );
+      if (workspaces.isNotEmpty) {
+        ref.read(authProvider.notifier).updateWorkspaces(workspaces);
+      }
+      return true;
+    } catch (e) {
+      debugPrint('[UcapKas Invoice] Failed to delete invoice: $e');
+      state = prev;
+      return false;
+    }
   }
 }
 

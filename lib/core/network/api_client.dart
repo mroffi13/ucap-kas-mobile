@@ -129,6 +129,50 @@ class ApiClient {
     });
   }
 
+  Future<Uint8List> getBytesAuthenticated(String path) async {
+    final token = await tokenStore.readAccessToken();
+    if (token == null || token.isEmpty) {
+      throw const ApiException(
+        statusCode: 401,
+        code: 'NO_TOKEN',
+        message: 'Sesi belum tersedia.',
+      );
+    }
+
+    Future<http.Response> fetch(String accessToken) {
+      return _sendWithHostFallback((base) {
+        return _httpClient
+            .get(
+              Uri.parse('$base$path'),
+              headers: {
+                'Accept': 'application/pdf',
+                'Authorization': 'Bearer $accessToken',
+              },
+            )
+            .timeout(const Duration(seconds: 10));
+      });
+    }
+
+    var res = await fetch(token);
+    if (res.statusCode == 401) {
+      final refreshed = await _trySingleFlightRefresh();
+      if (refreshed) {
+        final nextToken = await tokenStore.readAccessToken();
+        if (nextToken != null && nextToken.isNotEmpty) {
+          res = await fetch(nextToken);
+        }
+      }
+    }
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      return res.bodyBytes;
+    }
+    throw ApiException(
+      statusCode: res.statusCode,
+      code: 'PDF_DOWNLOAD_FAILED',
+      message: 'Gagal mengunduh PDF (${res.statusCode}).',
+    );
+  }
+
   Future<Map<String, dynamic>> postAuthenticated(
     String path, {
     Map<String, dynamic>? body,

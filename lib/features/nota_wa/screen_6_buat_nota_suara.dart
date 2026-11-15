@@ -6,8 +6,10 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/rupiah_formatter.dart';
+import '../../core/widgets/ucapkas_toast.dart';
 import '../../data/models/cash_transaction.dart';
 import '../../data/models/nota_invoice.dart';
+import '../../state/auth_provider.dart';
 import '../../state/ledger_providers.dart';
 
 class Screen6BuatNotaSuara extends ConsumerStatefulWidget {
@@ -69,31 +71,71 @@ class _Screen6BuatNotaSuaraState extends ConsumerState<Screen6BuatNotaSuara> {
   late final TextEditingController _contactController;
   late final TextEditingController _dueDateController;
   late final List<_DraftInvoiceLine> _items;
+  DateTime? _selectedDueDate;
+  bool _isSubmitting = false;
 
-  static const List<String> _duePresets = [
-    '12 November 2026',
-    'Besok',
-    '7 Hari Lagi',
+  static const List<(String label, int days)> _duePresets = [
+    ('Besok', 1),
+    ('7 Hari Lagi', 7),
+    ('14 Hari Lagi', 14),
+    ('30 Hari Lagi', 30),
   ];
+
+  static const List<String> _indoMonths = [
+    '',
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'Mei',
+    'Jun',
+    'Jul',
+    'Agu',
+    'Sep',
+    'Okt',
+    'Nov',
+    'Des',
+  ];
+
+  static String _formatIndoDate(DateTime date) {
+    return '${date.day} ${_indoMonths[date.month]} ${date.year}';
+  }
 
   @override
   void initState() {
     super.initState();
-    _customerController = TextEditingController(text: 'Pak Reza');
-    _contactController = TextEditingController(text: '0812-8890-3344');
-    _dueDateController = TextEditingController(text: '12 November 2026');
-    _items = [
-      _DraftInvoiceLine(
-        name: 'Kursi Kerja',
-        quantity: 3,
-        unitPrice: 100000,
-      ),
-      _DraftInvoiceLine(
-        name: 'Meja',
-        quantity: 3,
-        unitPrice: 200000,
-      ),
-    ];
+    final isAuth = ref.read(authProvider).isAuthenticated;
+    if (isAuth) {
+      final defaultDue = DateTime.now().add(const Duration(days: 7));
+      _selectedDueDate = defaultDue;
+      _customerController = TextEditingController();
+      _contactController = TextEditingController();
+      _dueDateController =
+          TextEditingController(text: _formatIndoDate(defaultDue));
+      _items = [
+        _DraftInvoiceLine(
+          name: '',
+          quantity: 1,
+          unitPrice: 0,
+        ),
+      ];
+    } else {
+      _customerController = TextEditingController(text: 'Pak Reza');
+      _contactController = TextEditingController(text: '0812-8890-3344');
+      _dueDateController = TextEditingController(text: '12 November 2026');
+      _items = [
+        _DraftInvoiceLine(
+          name: 'Kursi Kerja',
+          quantity: 3,
+          unitPrice: 100000,
+        ),
+        _DraftInvoiceLine(
+          name: 'Meja',
+          quantity: 3,
+          unitPrice: 200000,
+        ),
+      ];
+    }
   }
 
   @override
@@ -144,9 +186,9 @@ class _Screen6BuatNotaSuaraState extends ConsumerState<Screen6BuatNotaSuara> {
     setState(() {
       _items.add(
         _DraftInvoiceLine(
-          name: 'Barang / Jasa Baru',
+          name: '',
           quantity: 1,
-          unitPrice: 100000,
+          unitPrice: 0,
         ),
       );
     });
@@ -161,37 +203,115 @@ class _Screen6BuatNotaSuaraState extends ConsumerState<Screen6BuatNotaSuara> {
     });
   }
 
-  void _saveAndCreateInvoice() {
+  Future<void> _saveAndCreateInvoice() async {
+    if (_isSubmitting) return;
     HapticFeedback.mediumImpact();
-    final customer = _customerController.text.trim().isEmpty
-        ? 'Pelanggan'
-        : _customerController.text.trim();
+
+    final rawCustomer = _customerController.text.trim();
+    if (rawCustomer.isEmpty) {
+      UcapKasToast.showInfo(
+        context,
+        headerLabel: 'Lengkapi Data',
+        title: 'Nama pelanggan wajib diisi',
+        subtitle: 'Isi nama pelanggan atau toko tujuan tagihan',
+        badgeText: 'INFO',
+      );
+      return;
+    }
+
+    if (_grandTotal <= 0) {
+      UcapKasToast.showInfo(
+        context,
+        headerLabel: 'Lengkapi Data',
+        title: 'Nominal tagihan masih Rp 0',
+        subtitle: 'Masukkan harga satuan barang atau jasa terlebih dahulu',
+        badgeText: 'INFO',
+      );
+      return;
+    }
+
+    final isAuth = ref.read(authProvider).isAuthenticated;
     final contact = _contactController.text.trim().isEmpty
         ? 'WA Pelanggan'
         : _contactController.text.trim();
     final due = _dueDateController.text.trim().isEmpty
-        ? '12 November 2026'
+        ? '7 Hari Lagi'
         : _dueDateController.text.trim();
     final lineItems = _items.map((e) => e.toLineItem()).toList();
     final summary =
         lineItems.map((e) => '${e.quantity}x ${e.name}').join(', ');
-    final number = 'NOTA/2026/${1109 + ref.read(notaListProvider).length}';
 
-    ref.read(notaListProvider.notifier).addNota(
+    final tempId = isAuth ? 'temp-${DateTime.now().millisecondsSinceEpoch}' : '';
+    final number = isAuth
+        ? ''
+        : 'NOTA/2026/${1109 + ref.read(notaListProvider).length}';
+
+    setState(() => _isSubmitting = true);
+
+    final ok = await ref.read(notaListProvider.notifier).addNota(
           NotaInvoice(
+            id: tempId,
             number: number,
-            clientName: '$customer — $summary',
+            clientName: '$rawCustomer — $summary',
             clientContact: contact,
-            subtitle: '$number • Tempo: $due',
-            dateIssued: '14 Nov 2026',
+            subtitle: number.isEmpty ? 'Tempo: $due' : '$number • Tempo: $due',
+            dateIssued: 'Hari Ini',
             dueDateLabel: 'Tempo: $due',
+            dueAt: _selectedDueDate,
             amount: _grandTotal,
             status: NotaStatus.menunggu,
             items: List.unmodifiable(lineItems),
           ),
         );
-    ref.read(selectedNotaNumberProvider.notifier).state = number;
+
+    if (!mounted) return;
+    setState(() => _isSubmitting = false);
+
+    if (!ok) {
+      UcapKasToast.showInfo(
+        context,
+        headerLabel: 'Gagal Menyimpan',
+        title: 'Invoice gagal disimpan ke server',
+        subtitle: 'Periksa koneksi internet Anda dan coba lagi',
+        badgeText: 'ERROR',
+      );
+      return;
+    }
+
+    if (number.isNotEmpty) {
+      ref.read(selectedNotaNumberProvider.notifier).state = number;
+    } else {
+      final latest = ref.read(notaListProvider);
+      if (latest.isNotEmpty) {
+        ref.read(selectedNotaNumberProvider.notifier).state =
+            latest.first.number;
+      }
+    }
+
+    UcapKasToast.showInfo(
+      context,
+      headerLabel: 'Invoice Tersimpan',
+      title: rawCustomer,
+      subtitle: summary,
+      badgeText: RupiahFormatter.format(_grandTotal),
+    );
     context.go('/nota');
+  }
+
+  Future<void> _pickDueDate() async {
+    final now = DateTime.now();
+    final initial = _selectedDueDate ?? now.add(const Duration(days: 7));
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initial.isBefore(now) ? now : initial,
+      firstDate: now,
+      lastDate: now.add(const Duration(days: 365 * 3)),
+    );
+    if (picked == null || !mounted) return;
+    setState(() {
+      _selectedDueDate = picked;
+      _dueDateController.text = _formatIndoDate(picked);
+    });
   }
 
   @override
@@ -296,6 +416,7 @@ class _Screen6BuatNotaSuaraState extends ConsumerState<Screen6BuatNotaSuara> {
                 const SizedBox(height: 6),
                 TextField(
                   controller: _customerController,
+                  textCapitalization: TextCapitalization.words,
                   style: GoogleFonts.inter(
                     fontSize: 13.5,
                     fontWeight: FontWeight.w600,
@@ -306,6 +427,10 @@ class _Screen6BuatNotaSuaraState extends ConsumerState<Screen6BuatNotaSuara> {
                       Icons.person_outline_rounded,
                       size: 17,
                       color: AppColors.primaryTeal,
+                    ),
+                    prefixIconConstraints: const BoxConstraints(
+                      minWidth: 38,
+                      minHeight: 38,
                     ),
                     hintText: 'Nama pelanggan atau perusahaan',
                     isDense: true,
@@ -322,108 +447,117 @@ class _Screen6BuatNotaSuaraState extends ConsumerState<Screen6BuatNotaSuara> {
                   ),
                 ),
                 const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Jatuh Tempo',
-                            style: GoogleFonts.inter(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.textPrimary,
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          TextField(
-                            controller: _dueDateController,
-                            onChanged: (_) => setState(() {}),
-                            style: GoogleFonts.inter(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.textPrimary,
-                            ),
-                            decoration: InputDecoration(
-                              prefixIcon: const Icon(
-                                Icons.event_outlined,
-                                size: 16,
-                                color: AppColors.primaryTeal,
-                              ),
-                              hintText: '12 November 2026',
-                              isDense: true,
-                              filled: true,
-                              fillColor: AppColors.background,
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 10,
-                                vertical: 11,
-                              ),
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(11),
-                                borderSide: BorderSide.none,
-                              ),
-                            ),
-                          ),
-                        ],
+                Text(
+                  'No. WhatsApp Pelanggan',
+                  style: GoogleFonts.inter(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                TextField(
+                  controller: _contactController,
+                  keyboardType: TextInputType.phone,
+                  style: AppTheme.numStyle(
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textPrimary,
+                  ),
+                  decoration: InputDecoration(
+                    prefixIcon: const Icon(
+                      Icons.phone_outlined,
+                      size: 17,
+                      color: AppColors.primaryTeal,
+                    ),
+                    prefixIconConstraints: const BoxConstraints(
+                      minWidth: 38,
+                      minHeight: 38,
+                    ),
+                    hintText: 'Contoh: 0812-8890-3344',
+                    isDense: true,
+                    filled: true,
+                    fillColor: AppColors.background,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 11,
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(11),
+                      borderSide: BorderSide.none,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  'Jatuh Tempo',
+                  style: GoogleFonts.inter(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                TextField(
+                  controller: _dueDateController,
+                  onChanged: (_) => setState(() {
+                    _selectedDueDate = null;
+                  }),
+                  style: GoogleFonts.inter(
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textPrimary,
+                  ),
+                  decoration: InputDecoration(
+                    prefixIcon: const Icon(
+                      Icons.event_outlined,
+                      size: 17,
+                      color: AppColors.primaryTeal,
+                    ),
+                    prefixIconConstraints: const BoxConstraints(
+                      minWidth: 38,
+                      minHeight: 38,
+                    ),
+                    suffixIcon: IconButton(
+                      onPressed: _pickDueDate,
+                      tooltip: 'Pilih tanggal jatuh tempo',
+                      icon: const Icon(
+                        Icons.calendar_month_outlined,
+                        size: 18,
+                        color: AppColors.primaryTeal,
                       ),
                     ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'No. WhatsApp',
-                            style: GoogleFonts.inter(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.textPrimary,
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          TextField(
-                            controller: _contactController,
-                            style: GoogleFonts.inter(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.textPrimary,
-                            ),
-                            decoration: InputDecoration(
-                              prefixIcon: const Icon(
-                                Icons.phone_outlined,
-                                size: 16,
-                                color: AppColors.textMuted,
-                              ),
-                              hintText: '0812-xxxx-xxxx',
-                              isDense: true,
-                              filled: true,
-                              fillColor: AppColors.background,
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 10,
-                                vertical: 11,
-                              ),
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(11),
-                                borderSide: BorderSide.none,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
+                    hintText: 'Contoh: 23 Nov 2026',
+                    isDense: true,
+                    filled: true,
+                    fillColor: AppColors.background,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 11,
                     ),
-                  ],
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(11),
+                      borderSide: BorderSide.none,
+                    ),
+                  ),
                 ),
                 const SizedBox(height: 8),
                 Wrap(
                   spacing: 6,
                   runSpacing: 6,
                   children: _duePresets.map((preset) {
-                    final selected = currentDue == preset;
+                    final targetDate =
+                        DateTime.now().add(Duration(days: preset.$2));
+                    final formattedTarget = _formatIndoDate(targetDate);
+                    final selected = currentDue == formattedTarget ||
+                        currentDue == preset.$1;
                     return GestureDetector(
                       onTap: () {
                         HapticFeedback.selectionClick();
-                        setState(() => _dueDateController.text = preset);
+                        setState(() {
+                          _selectedDueDate = targetDate;
+                          _dueDateController.text = formattedTarget;
+                        });
                       },
                       child: Container(
                         padding: const EdgeInsets.symmetric(
@@ -437,7 +571,7 @@ class _Screen6BuatNotaSuaraState extends ConsumerState<Screen6BuatNotaSuara> {
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Text(
-                          preset,
+                          preset.$1,
                           style: GoogleFonts.inter(
                             fontSize: 11,
                             fontWeight: FontWeight.w600,
@@ -551,7 +685,7 @@ class _Screen6BuatNotaSuaraState extends ConsumerState<Screen6BuatNotaSuara> {
             border: Border(top: BorderSide(color: AppColors.border)),
           ),
           child: ElevatedButton.icon(
-            onPressed: _saveAndCreateInvoice,
+            onPressed: _isSubmitting ? null : _saveAndCreateInvoice,
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.heroDark,
               foregroundColor: Colors.white,
@@ -561,9 +695,18 @@ class _Screen6BuatNotaSuaraState extends ConsumerState<Screen6BuatNotaSuara> {
                 borderRadius: BorderRadius.circular(12),
               ),
             ),
-            icon: const Icon(Icons.send_rounded, size: 16),
+            icon: _isSubmitting
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : const Icon(Icons.send_rounded, size: 16),
             label: Text(
-              'Simpan & Kirim Invoice',
+              _isSubmitting ? 'Menyimpan Invoice...' : 'Simpan & Kirim Invoice',
               style: GoogleFonts.inter(
                 fontSize: 14,
                 fontWeight: FontWeight.w600,

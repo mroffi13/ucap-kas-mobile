@@ -8,7 +8,6 @@ import '../../core/theme/app_theme.dart';
 import '../../core/utils/rupiah_formatter.dart';
 import '../../core/widgets/ucapkas_bottom_nav.dart';
 import '../../core/widgets/ucapkas_toast.dart';
-import '../../data/models/cash_transaction.dart';
 import '../../data/models/nota_invoice.dart';
 import '../../state/ledger_providers.dart';
 
@@ -41,7 +40,10 @@ class Screen7DaftarNota extends ConsumerWidget {
       backgroundColor: AppColors.background,
       body: SafeArea(
         bottom: false,
-        child: ListView(
+        child: RefreshIndicator(
+          onRefresh: () =>
+              ref.read(notaListProvider.notifier).refreshFromServer(),
+          child: ListView(
           padding: const EdgeInsets.fromLTRB(18, 12, 18, 112),
           children: [
             // 1. Editorial Page Header + Primary Action
@@ -332,6 +334,7 @@ class Screen7DaftarNota extends ConsumerWidget {
               ),
           ],
         ),
+        ),
       ),
       bottomNavigationBar:
           const UcapKasBottomNavBar(activeTab: UcapKasTab.notaWa),
@@ -507,20 +510,8 @@ class Screen7DaftarNota extends ConsumerWidget {
                           HapticFeedback.mediumImpact();
                           ref
                               .read(notaListProvider.notifier)
-                              .markAsPaid(nota.number);
-                          ref
-                              .read(transactionsProvider.notifier)
-                              .addTransaction(
-                                CashTransaction(
-                                  id: 'tx-paid-${DateTime.now().millisecondsSinceEpoch}',
-                                  title: 'Pelunasan ${nota.clientName}',
-                                  category: 'Pelunasan Invoice',
-                                  paymentMethod: 'Transfer',
-                                  timeLabel: 'Baru saja',
-                                  dateGroup: 'HARI INI • RABU, 11 NOV 2026',
-                                  amount: nota.amount,
-                                  notaRef: nota.number,
-                                ),
+                              .markAsPaid(
+                                nota.id.isNotEmpty ? nota.id : nota.number,
                               );
                           UcapKasToast.showKasMasuk(
                             context,

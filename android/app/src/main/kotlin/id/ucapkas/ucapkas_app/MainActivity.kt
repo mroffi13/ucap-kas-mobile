@@ -1,18 +1,25 @@
 package id.ucapkas.ucapkas_app
 
 import android.Manifest
+import android.content.ContentValues
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.media.MediaRecorder
+import android.net.Uri
 import android.os.Build
+import android.os.Environment
+import android.provider.MediaStore
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import java.io.File
+import java.io.FileOutputStream
 
 class MainActivity : FlutterActivity() {
     private val channelName = "id.ucapkas.app/audio_recorder"
+    private val fileSaverChannelName = "id.ucapkas.app/file_saver"
     private val micPermRequestCode = 9012
     private var mediaRecorder: MediaRecorder? = null
     private var currentOutputPath: String? = null
@@ -77,6 +84,123 @@ class MainActivity : FlutterActivity() {
                     "cancel" -> {
                         stopRecorderQuietly(deleteFile = true)
                         result.success(null)
+                    }
+                    else -> result.notImplemented()
+                }
+            }
+
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, fileSaverChannelName)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "savePdf" -> {
+                        try {
+                            val bytes = call.argument<ByteArray>("bytes")
+                            val rawName = call.argument<String>("filename") ?: "invoice.pdf"
+                            if (bytes == null || bytes.isEmpty()) {
+                                result.error("INVALID_ARGS", "PDF bytes kosong", null)
+                                return@setMethodCallHandler
+                            }
+                            val safeName = rawName.replace(Regex("[^a-zA-Z0-9._-]"), "_")
+                            val finalName = if (safeName.endsWith(".pdf", ignoreCase = true)) {
+                                safeName
+                            } else {
+                                "$safeName.pdf"
+                            }
+
+                            var contentUriStr: String? = null
+                            var displayLocation = "Folder Download/$finalName"
+                            val cacheOut = File(cacheDir, finalName)
+                            FileOutputStream(cacheOut).use { it.write(bytes) }
+
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                                val values = ContentValues().apply {
+                                    put(MediaStore.Downloads.DISPLAY_NAME, finalName)
+                                    put(MediaStore.Downloads.MIME_TYPE, "application/pdf")
+                                    put(
+                                        MediaStore.Downloads.RELATIVE_PATH,
+                                        Environment.DIRECTORY_DOWNLOADS + "/UcapKas"
+                                    )
+                                    put(MediaStore.Downloads.IS_PENDING, 1)
+                                }
+                                val resolver = applicationContext.contentResolver
+                                val uri = resolver.insert(
+                                    MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+                                    values
+                                )
+                                if (uri != null) {
+                                    resolver.openOutputStream(uri)?.use { out ->
+                                        out.write(bytes)
+                                        out.flush()
+                                    }
+                                    values.clear()
+                                    values.put(MediaStore.Downloads.IS_PENDING, 0)
+                                    resolver.update(uri, values, null, null)
+                                    contentUriStr = uri.toString()
+                                    displayLocation = "Download/UcapKas/$finalName"
+                                }
+                            } else {
+                                val dir = File(
+                                    getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS),
+                                    "UcapKas"
+                                )
+                                if (!dir.exists()) dir.mkdirs()
+                                val outFile = File(dir, finalName)
+                                FileOutputStream(outFile).use { it.write(bytes) }
+                                displayLocation = outFile.absolutePath
+                            }
+
+                            result.success(
+                                mapOf(
+                                    "filePath" to cacheOut.absolutePath,
+                                    "displayLocation" to displayLocation,
+                                    "contentUri" to contentUriStr
+                                )
+                            )
+                        } catch (e: Exception) {
+                            result.error("SAVE_PDF_ERROR", e.message, null)
+                        }
+                    }
+                    "openPdf" -> {
+                        try {
+                            val contentUriStr = call.argument<String>("contentUri")
+                            if (contentUriStr.isNullOrBlank()) {
+                                result.success(false)
+                                return@setMethodCallHandler
+                            }
+                            val uri = Uri.parse(contentUriStr)
+                            val intent = Intent(Intent.ACTION_VIEW).apply {
+                                setDataAndType(uri, "application/pdf")
+                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                            startActivity(Intent.createChooser(intent, "Buka Invoice PDF"))
+                            result.success(true)
+                        } catch (_: Exception) {
+                            result.success(false)
+                        }
+                    }
+                    "sharePdf" -> {
+                        try {
+                            val contentUriStr = call.argument<String>("contentUri")
+                            val text = call.argument<String>("text") ?: ""
+                            val title = call.argument<String>("title") ?: "Kirim Invoice PDF"
+                            val intent = Intent(Intent.ACTION_SEND).apply {
+                                if (!contentUriStr.isNullOrBlank()) {
+                                    type = "application/pdf"
+                                    putExtra(Intent.EXTRA_STREAM, Uri.parse(contentUriStr))
+                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                } else {
+                                    type = "text/plain"
+                                }
+                                if (text.isNotEmpty()) {
+                                    putExtra(Intent.EXTRA_TEXT, text)
+                                }
+                            }
+                            startActivity(Intent.createChooser(intent, title))
+                            result.success(true)
+                        } catch (_: Exception) {
+                            result.success(false)
+                        }
                     }
                     else -> result.notImplemented()
                 }
