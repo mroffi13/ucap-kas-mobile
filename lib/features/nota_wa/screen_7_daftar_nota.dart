@@ -7,6 +7,7 @@ import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/rupiah_formatter.dart';
 import '../../core/widgets/ucapkas_bottom_nav.dart';
+import '../../core/widgets/ucapkas_toast.dart';
 import '../../data/models/cash_transaction.dart';
 import '../../data/models/nota_invoice.dart';
 import '../../state/ledger_providers.dart';
@@ -521,13 +522,11 @@ class Screen7DaftarNota extends ConsumerWidget {
                                   notaRef: nota.number,
                                 ),
                               );
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(
-                                '${nota.number} ditandai Lunas & dicatat ke Buku Kas',
-                              ),
-                              behavior: SnackBarBehavior.floating,
-                            ),
+                          UcapKasToast.showKasMasuk(
+                            context,
+                            title: 'Pelunasan ${nota.clientName}',
+                            amount: nota.amount,
+                            subtitle: '${nota.number} • Lunas & Dicatat ke Kas',
                           );
                         },
                         child: Container(

@@ -3,14 +3,17 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../../core/network/api_client.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/utils/native_voice_recorder.dart';
 import '../../core/utils/rupiah_formatter.dart';
 import '../../core/utils/slang_parser.dart';
 import '../../core/widgets/ucapkas_toast.dart';
 import '../../core/widgets/workspace_pill.dart';
 import '../../data/models/cash_transaction.dart';
 import '../../data/models/nota_invoice.dart';
+import '../../state/auth_provider.dart';
 import '../../state/ledger_providers.dart';
 
 class Screen2VoiceSheet extends ConsumerStatefulWidget {
@@ -90,6 +93,11 @@ class _Screen2VoiceSheetState extends ConsumerState<Screen2VoiceSheet>
   late final TextEditingController _invoiceDueDateController;
   late final TextEditingController _invoiceNotesController;
   final List<_EditableVoiceItem> _invoiceItems = [];
+  bool _isParsingAi = false;
+  int _parseReqSeq = 0;
+  String _aiPipelineStatus = '';
+  final NativeVoiceRecorder _inlineRecorder = NativeVoiceRecorder();
+  bool _isListeningInline = false;
 
   static const List<String> _presetCategories = [
     'Servis',
@@ -139,9 +147,33 @@ class _Screen2VoiceSheetState extends ConsumerState<Screen2VoiceSheet>
       text: 'Pembelian kursi kerja 3 buah & meja 3 buah',
     );
 
-    _resetDefaultKasItems();
-    _resetDefaultInvoiceItems();
-    _detectAndApplySpeech(session.transcript, resetItems: false);
+    final hasVoiceInput =
+        session.audioBase64.isNotEmpty || session.transcript.isNotEmpty;
+    final isAuth = ref.read(authProvider).isAuthenticated;
+
+    if (hasVoiceInput && isAuth) {
+      _isParsingAi = true;
+      _aiPipelineStatus = session.audioBase64.isNotEmpty
+          ? 'Mengubah suara menjadi teks (STT) & menyusun transaksi...'
+          : 'Menyusun transaksi otomatis dari ucapanmu...';
+      _kasNoteController.clear();
+      _invoiceNotesController.clear();
+      Future.microtask(() {
+        if (mounted) {
+          _parseTranscriptWithBackendAI(
+            showToast: session.audioBase64.isNotEmpty,
+            audioBase64: session.audioBase64,
+            mimeType: session.mimeType,
+          );
+        }
+      });
+    } else {
+      _resetDefaultKasItems();
+      _resetDefaultInvoiceItems();
+      if (session.transcript.isNotEmpty) {
+        _detectAndApplySpeech(session.transcript, resetItems: false);
+      }
+    }
   }
 
   void _resetDefaultKasItems() {
@@ -200,6 +232,9 @@ class _Screen2VoiceSheetState extends ConsumerState<Screen2VoiceSheet>
     for (final item in _invoiceItems) {
       item.dispose();
     }
+    try {
+      _inlineRecorder.dispose();
+    } catch (_) {}
     super.dispose();
   }
 
@@ -285,13 +320,213 @@ class _Screen2VoiceSheetState extends ConsumerState<Screen2VoiceSheet>
     });
   }
 
-  void _applySampleSpeech(String sample) {
-    HapticFeedback.selectionClick();
-    _transcriptController.value = TextEditingValue(
-      text: sample,
-      selection: TextSelection.collapsed(offset: sample.length),
-    );
-    _detectAndApplySpeech(sample, resetItems: true);
+  Future<void> _toggleInlineSpeechListening() async {
+    HapticFeedback.mediumImpact();
+    if (_isListeningInline) {
+      final audioB64 = await _inlineRecorder.stopAndEncodeBase64() ?? '';
+      if (!mounted) return;
+      setState(() => _isListeningInline = false);
+      await _parseTranscriptWithBackendAI(
+        showToast: true,
+        audioBase64: audioB64,
+        mimeType: 'audio/mp4',
+      );
+      return;
+    }
+
+    try {
+      final hasPerm = await _inlineRecorder.hasPermission();
+      if (!hasPerm) {
+        if (!mounted) return;
+        UcapKasToast.showInfo(
+          context,
+          headerLabel: 'Izin Mikrofon Diperlukan',
+          title: 'Aktifkan izin mikrofon di pengaturan HP Anda.',
+        );
+        return;
+      }
+
+      final startedPath = await _inlineRecorder.start();
+      if (!mounted) return;
+      setState(() => _isListeningInline = startedPath != null);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _isListeningInline = false);
+      UcapKasToast.showInfo(
+        context,
+        headerLabel: 'Mikrofon Tidak Tersedia',
+        title: 'Gunakan input teks atau contoh ucapan di bawah.',
+      );
+    }
+  }
+
+  Future<void> _parseTranscriptWithBackendAI({
+    bool showToast = true,
+    String audioBase64 = '',
+    String mimeType = 'audio/mp4',
+  }) async {
+    final text = _transcriptController.text.trim();
+    if (text.isEmpty && audioBase64.isEmpty) return;
+
+    final isAuth = ref.read(authProvider).isAuthenticated;
+    if (!isAuth) {
+      _detectAndApplySpeech(text, resetItems: false);
+      if (showToast && mounted) {
+        UcapKasToast.showInfo(
+          context,
+          headerLabel: 'Mode Pratinjau',
+          title: 'Transkrip Diproses Lokal',
+          subtitle: 'Masuk dengan Google untuk ekstraksi Whisper & AI penuh.',
+        );
+      }
+      return;
+    }
+
+    final wsId = ref.read(activeWorkspaceProvider).id;
+    if (wsId.isEmpty) return;
+
+    final reqId = ++_parseReqSeq;
+    setState(() {
+      _isParsingAi = true;
+      _aiPipelineStatus = audioBase64.isNotEmpty
+          ? 'Mengubah suara menjadi teks (STT) & menyusun transaksi...'
+          : 'Menyusun transaksi otomatis dari ucapanmu...';
+    });
+    try {
+      final result = await ref.read(aiRepositoryProvider).parseVoice(
+            workspaceId: wsId,
+            transcript: audioBase64.isNotEmpty ? '' : text,
+            audioBase64: audioBase64,
+            mimeType: mimeType,
+          );
+      if (!mounted || reqId != _parseReqSeq) return;
+
+      ref.read(aiQuotaProvider.notifier).state = result.quota;
+
+      setState(() {
+        final providerLabel = switch (result.provider) {
+          '9router_gateway' => '9Router STT + LLM',
+          'groq_whisper_llama' => 'Groq Whisper + Llama',
+          'gemini_flash' => 'Gemini AI',
+          _ => 'NLP Bahasa Pasar',
+        };
+        _aiPipelineStatus =
+            'Auto-fill selesai via $providerLabel · Total ${RupiahFormatter.format(result.totalAmount)}';
+
+        if (result.transcript.isNotEmpty) {
+          _transcriptController.value = TextEditingValue(
+            text: result.transcript,
+            selection:
+                TextSelection.collapsed(offset: result.transcript.length),
+          );
+        }
+        if (result.intent == 'kirim_invoice') {
+          _intentType = VoiceIntentType.kirimInvoice;
+          if (result.customerName.isNotEmpty) {
+            _invoiceCustomerController.text = result.customerName;
+          }
+          if (result.customerContact.isNotEmpty) {
+            _invoiceContactController.text = result.customerContact;
+          }
+          if (result.dueDate.isNotEmpty) {
+            _invoiceDueDateController.text = result.dueDate;
+          }
+          if (result.notes.isNotEmpty) {
+            _invoiceNotesController.text = result.notes;
+          } else if (result.title.isNotEmpty) {
+            _invoiceNotesController.text = result.title;
+          }
+          if (result.items.isNotEmpty) {
+            for (final item in _invoiceItems) {
+              item.dispose();
+            }
+            _invoiceItems
+              ..clear()
+              ..addAll(
+                result.items.map(
+                  (e) => _EditableVoiceItem(
+                    name: e.name,
+                    quantity: e.quantity,
+                    unitPrice: e.unitPrice,
+                  ),
+                ),
+              );
+          }
+        } else {
+          _intentType = VoiceIntentType.bukuKas;
+          _isKasMasuk = result.isInflow;
+          if (_isKasMasuk) {
+            _modeController.reverse();
+          } else {
+            _modeController.forward();
+          }
+          if (result.title.isNotEmpty) {
+            _kasNoteController.text = result.title;
+          }
+          if (result.category.isNotEmpty) {
+            _categoryController.text = result.category;
+          }
+          if (result.paymentMethod.isNotEmpty) {
+            _selectedPayment = result.paymentMethod;
+          }
+          if (result.items.isNotEmpty) {
+            for (final item in _kasItems) {
+              item.dispose();
+            }
+            _kasItems
+              ..clear()
+              ..addAll(
+                result.items.map(
+                  (e) => _EditableVoiceItem(
+                    name: e.name,
+                    quantity: e.quantity,
+                    unitPrice: e.unitPrice,
+                  ),
+                ),
+              );
+          }
+        }
+      });
+
+      if (showToast && mounted) {
+        UcapKasToast.showInfo(
+          context,
+          headerLabel: 'AI Suara Selesai',
+          title: '${result.items.length} rincian berhasil diekstrak',
+          subtitle: result.quota.isUnlimited
+              ? 'Paket Pro • AI Tanpa Batas'
+              : 'Kuota AI bulan ini: ${result.quota.used}/${result.quota.limit}',
+          badgeText: RupiahFormatter.format(result.totalAmount),
+        );
+      }
+    } on ApiException catch (e) {
+      if (!mounted || reqId != _parseReqSeq) return;
+      setState(() {
+        _aiPipelineStatus = e.message;
+      });
+      UcapKasToast.showInfo(
+        context,
+        headerLabel: e.code == 'AI_QUOTA_EXCEEDED' ? 'Kuota AI Habis' : 'Gagal Ekstrak AI',
+        title: e.message,
+        badgeText: 'Info AI',
+      );
+    } catch (_) {
+      if (!mounted || reqId != _parseReqSeq) return;
+      setState(() {
+        _aiPipelineStatus = 'Koneksi AI terkendala · menggunakan deteksi lokal';
+      });
+      if (showToast) {
+        UcapKasToast.showInfo(
+          context,
+          headerLabel: 'Koneksi AI Terkendala',
+          title: 'Menggunakan deteksi bahasa pasar lokal.',
+        );
+      }
+    } finally {
+      if (mounted && reqId == _parseReqSeq) {
+        setState(() => _isParsingAi = false);
+      }
+    }
   }
 
   void _switchTransactionType(bool kasMasuk) {
@@ -392,8 +627,10 @@ class _Screen2VoiceSheetState extends ConsumerState<Screen2VoiceSheet>
             dateGroup: 'HARI INI • RABU, 11 NOV 2026',
             amount: signedAmount,
             customerName: noteText.isEmpty ? null : noteText,
+            source: 'voice_ai',
             items: List.unmodifiable(lineItems),
           ),
+          source: 'voice_ai',
         );
     if (_isKasMasuk) {
       UcapKasToast.showKasMasuk(
@@ -458,6 +695,17 @@ class _Screen2VoiceSheetState extends ConsumerState<Screen2VoiceSheet>
   Widget build(BuildContext context) {
     final ws = ref.watch(activeWorkspaceProvider);
     final voiceSession = ref.watch(lastVoiceSessionProvider);
+
+    ref.listen<VoiceRecordingSession>(lastVoiceSessionProvider, (prev, next) {
+      if (next.audioBase64.isNotEmpty &&
+          next.audioBase64 != (prev?.audioBase64 ?? '')) {
+        _parseTranscriptWithBackendAI(
+          showToast: true,
+          audioBase64: next.audioBase64,
+          mimeType: next.mimeType,
+        );
+      }
+    });
     final formattedDuration =
         '00:${voiceSession.durationSeconds.toString().padLeft(2, '0')}';
     final slangAmount = SlangParser.parseSpokenAmount('ceban tiga') ?? 30000;
@@ -519,35 +767,39 @@ class _Screen2VoiceSheetState extends ConsumerState<Screen2VoiceSheet>
               ),
             ],
           ),
-          body: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(18, 6, 18, 32),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                // 1. Free-Text Speech Box + Intent Switcher (Buku Kas vs Kirim Invoice)
-                _buildVoiceSpeechCard(
-                  formattedDuration: formattedDuration,
-                  isPushToTalk: voiceSession.isPushToTalk,
-                  slangAmount: slangAmount,
-                  accent: activeAccent,
-                ),
-                const SizedBox(height: 14),
+          body: _isParsingAi
+              ? _buildAiLoadingBody(activeAccent)
+              : SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(18, 6, 18, 32),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      // 1. Free-Text Speech Box + Intent Switcher (Buku Kas vs Kirim Invoice)
+                      _buildVoiceSpeechCard(
+                        formattedDuration: formattedDuration,
+                        isPushToTalk: voiceSession.isPushToTalk,
+                        slangAmount: slangAmount,
+                        accent: activeAccent,
+                      ),
+                      const SizedBox(height: 14),
 
-                // 2. SWITCH CASE based on VoiceIntentType
-                switch (_intentType) {
-                  VoiceIntentType.bukuKas => _buildBukuKasContent(
-                      t: t,
-                      accent: kasAccent,
-                      softBg: kasSoftBg,
-                    ),
-                  VoiceIntentType.kirimInvoice => _buildKirimInvoiceContent(
-                      accent: AppColors.primaryTeal,
-                    ),
-                },
-              ],
-            ),
-          ),
-          bottomNavigationBar: SafeArea(
+                      // 2. SWITCH CASE based on VoiceIntentType
+                      switch (_intentType) {
+                        VoiceIntentType.bukuKas => _buildBukuKasContent(
+                            t: t,
+                            accent: kasAccent,
+                            softBg: kasSoftBg,
+                          ),
+                        VoiceIntentType.kirimInvoice => _buildKirimInvoiceContent(
+                            accent: AppColors.primaryTeal,
+                          ),
+                      },
+                    ],
+                  ),
+                ),
+          bottomNavigationBar: _isParsingAi
+              ? null
+              : SafeArea(
             child: Container(
               padding: const EdgeInsets.fromLTRB(18, 12, 18, 12),
               decoration: const BoxDecoration(
@@ -636,7 +888,157 @@ class _Screen2VoiceSheetState extends ConsumerState<Screen2VoiceSheet>
     );
   }
 
-  /// Top card: Free-text speech box + automatic intent detection + sample speech pills
+  /// Skeletal loading view matching the final review layout shape while STT + LLM process.
+  Widget _buildAiLoadingBody(Color accent) {
+    final status = _aiPipelineStatus.isNotEmpty
+        ? _aiPipelineStatus
+        : 'Menyusun transaksi dari catatan suara...';
+
+    Widget bone({double? width, double height = 12, double radius = 8}) {
+      return Container(
+        width: width,
+        height: height,
+        decoration: BoxDecoration(
+          color: AppColors.surfaceSubtle,
+          borderRadius: BorderRadius.circular(radius),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(18, 10, 18, 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Skeleton 1: Transcript strip
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: AppColors.border),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    bone(width: 110, height: 12),
+                    bone(width: 120, height: 26, radius: 10),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                bone(height: 14),
+                const SizedBox(height: 8),
+                bone(width: 210, height: 14),
+                const SizedBox(height: 14),
+                const Divider(height: 1, color: AppColors.border),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation<Color>(accent),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        status,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
+
+          // Skeleton 2: Summary & Total card
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: AppColors.border),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                bone(height: 40, radius: 12),
+                const SizedBox(height: 18),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    bone(width: 110, height: 12),
+                    bone(width: 140, height: 26, radius: 8),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                const Divider(height: 1, color: AppColors.border),
+                const SizedBox(height: 16),
+                bone(width: 90, height: 11),
+                const SizedBox(height: 10),
+                bone(height: 44, radius: 12),
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
+
+          // Skeleton 3: Line items
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: AppColors.border),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                bone(width: 120, height: 12),
+                const SizedBox(height: 14),
+                bone(height: 52, radius: 12),
+                const SizedBox(height: 10),
+                bone(height: 52, radius: 12),
+              ],
+            ),
+          ),
+          const Spacer(),
+          Center(
+            child: TextButton(
+              onPressed: () {
+                _parseReqSeq++;
+                setState(() => _isParsingAi = false);
+                context.pop();
+              },
+              child: Text(
+                'Batalkan',
+                style: GoogleFonts.inter(
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.textMuted,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Top strip: Quiet editorial transcript quote + intent switcher
   Widget _buildVoiceSpeechCard({
     required String formattedDuration,
     required bool isPushToTalk,
@@ -646,68 +1048,59 @@ class _Screen2VoiceSheetState extends ConsumerState<Screen2VoiceSheet>
     final isInvoice = _intentType == VoiceIntentType.kirimInvoice;
 
     return Container(
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
       decoration: BoxDecoration(
         color: AppColors.surface,
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(color: AppColors.border),
-        boxShadow: AppColors.cardShadow,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header: Suara Anda + Mode Switcher (Buku Kas vs Kirim Invoice)
+          // Header: Duration/Capture mode + Intent Switcher
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Expanded(
-                child: Wrap(
-                  spacing: 6,
-                  runSpacing: 4,
-                  crossAxisAlignment: WrapCrossAlignment.center,
+                child: Row(
                   children: [
-                    Icon(
-                      Icons.graphic_eq_rounded,
-                      size: 15,
-                      color: accent,
-                    ),
-                    Text(
-                      'Suara Anda · $formattedDuration',
-                      style: GoogleFonts.inter(
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.textSecondary,
-                      ),
-                    ),
                     Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 6,
-                        vertical: 2,
-                      ),
+                      width: 26,
+                      height: 26,
                       decoration: BoxDecoration(
-                        color: AppColors.surfaceSubtle,
-                        borderRadius: BorderRadius.circular(6),
+                        color: accent.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(8),
                       ),
+                      child: Icon(
+                        Icons.graphic_eq_rounded,
+                        size: 15,
+                        color: accent,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Flexible(
                       child: Text(
-                        isPushToTalk ? 'Push-to-Talk' : 'Rekam Klik',
+                        isPushToTalk
+                            ? '$formattedDuration · Push-to-Talk'
+                            : 'Rekam · $formattedDuration',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: GoogleFonts.inter(
-                          fontSize: 10,
+                          fontSize: 12,
                           fontWeight: FontWeight.w600,
-                          color: AppColors.textMuted,
+                          color: AppColors.textSecondary,
                         ),
                       ),
                     ),
                   ],
                 ),
               ),
-              const SizedBox(width: 6),
-              // Intent Type Pill Switcher (Buku Kas vs Kirim Invoice)
+              const SizedBox(width: 8),
               Container(
-                padding: const EdgeInsets.all(2.5),
+                padding: const EdgeInsets.all(3),
                 decoration: BoxDecoration(
                   color: AppColors.surfaceSubtle,
-                  borderRadius: BorderRadius.circular(9),
-                  border: Border.all(color: AppColors.border),
+                  borderRadius: BorderRadius.circular(10),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
@@ -723,7 +1116,7 @@ class _Screen2VoiceSheetState extends ConsumerState<Screen2VoiceSheet>
                       },
                     ),
                     _buildIntentSwitchPill(
-                      label: 'Kirim Invoice',
+                      label: 'Invoice',
                       selected: isInvoice,
                       onTap: () {
                         HapticFeedback.selectionClick();
@@ -739,85 +1132,146 @@ class _Screen2VoiceSheetState extends ConsumerState<Screen2VoiceSheet>
           ),
           const SizedBox(height: 10),
 
-          // Free-text editable speech box
+          // Breathable quote-style transcript input
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
             decoration: BoxDecoration(
               color: AppColors.background,
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: AppColors.border),
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                TextField(
-                  key: const Key('input_voice_transcript'),
-                  controller: _transcriptController,
-                  minLines: 1,
-                  maxLines: 3,
-                  onChanged: (val) =>
-                      _detectAndApplySpeech(val, resetItems: false),
-                  style: GoogleFonts.plusJakartaSans(
-                    fontSize: 13.5,
-                    fontWeight: FontWeight.w600,
-                    height: 1.4,
-                    color: AppColors.textPrimary,
-                  ),
-                  decoration: InputDecoration(
-                    hintText:
-                        'Ketik kalimat suara (misal: "Ada uang masuk..." atau "Buatin invoice...")',
-                    hintStyle: GoogleFonts.inter(
-                      fontSize: 12.5,
-                      color: AppColors.textMuted,
-                    ),
-                    isDense: true,
-                    border: InputBorder.none,
-                    enabledBorder: InputBorder.none,
-                    focusedBorder: InputBorder.none,
-                    contentPadding: EdgeInsets.zero,
-                  ),
+            child: TextField(
+              key: const Key('input_voice_transcript'),
+              controller: _transcriptController,
+              minLines: 1,
+              maxLines: 4,
+              onChanged: (val) => _detectAndApplySpeech(val, resetItems: false),
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                height: 1.45,
+                color: AppColors.textPrimary,
+              ),
+              decoration: InputDecoration(
+                hintText:
+                    'Ketik atau koreksi ucapan (misal: "Beli bakso 20 ribu tunai")',
+                hintStyle: GoogleFonts.inter(
+                  fontSize: 13,
+                  color: AppColors.textMuted,
                 ),
-                const SizedBox(height: 6),
-                Text(
-                  isInvoice
-                      ? 'Terdeteksi perintah Invoice untuk ${_invoiceCustomerController.text} · Jatuh tempo ${_invoiceDueDateController.text}'
-                      : 'Terdeteksi pencatatan Kas · "ceban tiga" = ${RupiahFormatter.format(slangAmount)}',
-                  style: GoogleFonts.inter(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w500,
-                    color: accent,
-                  ),
-                ),
-              ],
+                isDense: true,
+                border: InputBorder.none,
+                enabledBorder: InputBorder.none,
+                focusedBorder: InputBorder.none,
+                contentPadding: EdgeInsets.zero,
+              ),
             ),
           ),
           const SizedBox(height: 10),
 
-          // Simulasi Cepat Kalimat Suara (1-tap test for both speech types)
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            crossAxisAlignment: WrapCrossAlignment.center,
+          // Utility bar with >=8px touch spacing
+          Row(
             children: [
-              Text(
-                'Coba ucapan:',
-                style: GoogleFonts.inter(
-                  fontSize: 11,
-                  color: AppColors.textMuted,
+              Expanded(
+                child: Text(
+                  _aiPipelineStatus.isNotEmpty
+                      ? _aiPipelineStatus
+                      : (isInvoice
+                          ? 'Invoice · ${_invoiceCustomerController.text.isEmpty ? "Pelanggan" : _invoiceCustomerController.text}'
+                          : (_isKasMasuk ? 'Kas Masuk' : 'Kas Keluar')),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.inter(
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textMuted,
+                  ),
                 ),
               ),
-              _buildSampleSpeechPill(
-                label: 'Kas Masuk (Pak Husni)',
-                isActive: !isInvoice,
-                onTap: () => _applySampleSpeech(
-                  VoiceRecordingSession.sampleKasSpeech,
+              const SizedBox(width: 8),
+              GestureDetector(
+                key: const Key('btn_voice_inline_stt'),
+                onTap: _toggleInlineSpeechListening,
+                child: Container(
+                  constraints: const BoxConstraints(minHeight: 36),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 7,
+                  ),
+                  decoration: BoxDecoration(
+                    color: _isListeningInline
+                        ? AppColors.expenseRose
+                        : AppColors.surfaceSubtle,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: _isListeningInline
+                          ? AppColors.expenseRose
+                          : AppColors.border,
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        _isListeningInline
+                            ? Icons.stop_rounded
+                            : Icons.mic_none_rounded,
+                        size: 15,
+                        color: _isListeningInline
+                            ? Colors.white
+                            : AppColors.textSecondary,
+                      ),
+                      const SizedBox(width: 5),
+                      Text(
+                        _isListeningInline ? 'Stop' : 'Bicara',
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: _isListeningInline
+                              ? Colors.white
+                              : AppColors.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-              _buildSampleSpeechPill(
-                label: 'Buat Invoice (Pak Reza · Rp 900 rb)',
-                isActive: isInvoice,
-                onTap: () => _applySampleSpeech(
-                  VoiceRecordingSession.sampleInvoiceSpeech,
+              const SizedBox(width: 8),
+              GestureDetector(
+                key: const Key('btn_voice_ai_extract'),
+                onTap: _isParsingAi
+                    ? null
+                    : () => _parseTranscriptWithBackendAI(showToast: true),
+                child: Container(
+                  constraints: const BoxConstraints(minHeight: 36),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 7,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.heroDark,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        _isParsingAi
+                            ? Icons.hourglass_top_rounded
+                            : Icons.refresh_rounded,
+                        size: 14,
+                        color: Colors.white,
+                      ),
+                      const SizedBox(width: 5),
+                      Text(
+                        _isParsingAi ? 'Memproses...' : 'Proses Ulang',
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ],
@@ -834,30 +1288,17 @@ class _Screen2VoiceSheetState extends ConsumerState<Screen2VoiceSheet>
     required Color softBg,
   }) {
     final currentCategory = _categoryController.text.trim();
-    final leftTextColor = Color.lerp(
-          AppColors.textPrimary,
-          AppColors.textMuted,
-          t,
-        ) ??
-        AppColors.textPrimary;
-    final rightTextColor = Color.lerp(
-          AppColors.textMuted,
-          AppColors.textPrimary,
-          t,
-        ) ??
-        AppColors.textMuted;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // Hero Financial Summary + Smooth Sliding Toggle (Kas Masuk / Keluar)
+        // Hero Financial Summary (High-contrast Nordic Ledger dark anchor)
         Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: AppColors.surface,
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: AppColors.border),
-            boxShadow: AppColors.cardShadow,
+            color: AppColors.heroDark,
+            borderRadius: BorderRadius.circular(18),
+            boxShadow: AppColors.heroShadow,
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -887,12 +1328,12 @@ class _Screen2VoiceSheetState extends ConsumerState<Screen2VoiceSheet>
                       }
                     },
                     child: Container(
-                      height: 42,
+                      height: 44,
                       padding: const EdgeInsets.all(3),
                       decoration: BoxDecoration(
-                        color: AppColors.background,
-                        borderRadius: BorderRadius.circular(11),
-                        border: Border.all(color: AppColors.border),
+                        color: AppColors.heroCardSecondary,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: AppColors.darkBorder),
                       ),
                       child: Stack(
                         children: [
@@ -903,15 +1344,10 @@ class _Screen2VoiceSheetState extends ConsumerState<Screen2VoiceSheet>
                               heightFactor: 1.0,
                               child: Container(
                                 decoration: BoxDecoration(
-                                  color: AppColors.surface,
-                                  borderRadius: BorderRadius.circular(8),
-                                  boxShadow: const [
-                                    BoxShadow(
-                                      color: Color(0x100B1220),
-                                      blurRadius: 6,
-                                      offset: Offset(0, 1),
-                                    ),
-                                  ],
+                                  color: _isKasMasuk
+                                      ? AppColors.incomeEmerald
+                                      : AppColors.expenseRose,
+                                  borderRadius: BorderRadius.circular(9),
                                 ),
                               ),
                             ),
@@ -926,11 +1362,13 @@ class _Screen2VoiceSheetState extends ConsumerState<Screen2VoiceSheet>
                                     child: Text(
                                       'Kas Masuk',
                                       style: GoogleFonts.inter(
-                                        fontSize: 12.5,
+                                        fontSize: 13,
                                         fontWeight: t < 0.5
                                             ? FontWeight.w700
                                             : FontWeight.w500,
-                                        color: leftTextColor,
+                                        color: t < 0.5
+                                            ? Colors.white
+                                            : AppColors.darkTextMuted,
                                       ),
                                     ),
                                   ),
@@ -944,11 +1382,13 @@ class _Screen2VoiceSheetState extends ConsumerState<Screen2VoiceSheet>
                                     child: Text(
                                       'Kas Keluar',
                                       style: GoogleFonts.inter(
-                                        fontSize: 12.5,
+                                        fontSize: 13,
                                         fontWeight: t >= 0.5
                                             ? FontWeight.w700
                                             : FontWeight.w500,
-                                        color: rightTextColor,
+                                        color: t >= 0.5
+                                            ? Colors.white
+                                            : AppColors.darkTextMuted,
                                       ),
                                     ),
                                   ),
@@ -962,11 +1402,10 @@ class _Screen2VoiceSheetState extends ConsumerState<Screen2VoiceSheet>
                   );
                 },
               ),
-              const SizedBox(height: 14),
+              const SizedBox(height: 16),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                crossAxisAlignment: CrossAxisAlignment.baseline,
-                textBaseline: TextBaseline.alphabetic,
+                crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   Flexible(
                     child: Column(
@@ -981,17 +1420,17 @@ class _Screen2VoiceSheetState extends ConsumerState<Screen2VoiceSheet>
                           style: GoogleFonts.inter(
                             fontSize: 12,
                             fontWeight: FontWeight.w600,
-                            color: AppColors.textSecondary,
+                            color: AppColors.darkTextMuted,
                           ),
                         ),
-                        const SizedBox(height: 2),
+                        const SizedBox(height: 3),
                         Text(
                           '${_kasItems.length} rincian tercatat',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: GoogleFonts.inter(
-                            fontSize: 11,
-                            color: AppColors.textMuted,
+                            fontSize: 11.5,
+                            color: AppColors.darkTextMuted.withValues(alpha: 0.8),
                           ),
                         ),
                       ],
@@ -1001,43 +1440,57 @@ class _Screen2VoiceSheetState extends ConsumerState<Screen2VoiceSheet>
                   Text(
                     '${_isKasMasuk ? '+' : '-'}${RupiahFormatter.format(_totalAmount)}',
                     style: AppTheme.numStyle(
-                      fontSize: 26,
-                      color: accent,
-                      letterSpacing: -0.7,
+                      fontSize: 28,
+                      color: _isKasMasuk
+                          ? AppColors.incomeEmeraldBright
+                          : AppColors.expenseRoseBright,
+                      letterSpacing: -0.8,
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 12),
-              // Free-text Catatan / Keterangan Kas (misal: Pak Husni — Benerin motor)
+              const SizedBox(height: 14),
+              // Free-text Catatan / Keterangan Kas on dark surface
               TextField(
                 controller: _kasNoteController,
                 style: GoogleFonts.inter(
-                  fontSize: 13,
+                  fontSize: 13.5,
                   fontWeight: FontWeight.w600,
-                  color: AppColors.textPrimary,
+                  color: Colors.white,
                 ),
                 decoration: InputDecoration(
                   prefixIcon: const Icon(
                     Icons.notes_rounded,
                     size: 17,
-                    color: AppColors.textMuted,
+                    color: AppColors.darkTextMuted,
                   ),
                   hintText: 'Keterangan kas (misal: Pak Husni — Benerin motor)',
                   hintStyle: GoogleFonts.inter(
                     fontSize: 12.5,
-                    color: AppColors.textMuted,
+                    color: AppColors.darkTextMuted,
                   ),
                   isDense: true,
                   filled: true,
-                  fillColor: AppColors.background,
+                  fillColor: AppColors.heroCardSecondary,
                   contentPadding: const EdgeInsets.symmetric(
                     horizontal: 12,
-                    vertical: 10,
+                    vertical: 11,
                   ),
                   border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(11),
-                    borderSide: BorderSide.none,
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: AppColors.darkBorder),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: AppColors.darkBorder),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(
+                      color: _isKasMasuk
+                          ? AppColors.incomeEmeraldBright
+                          : AppColors.expenseRoseBright,
+                    ),
                   ),
                 ),
               ),
@@ -1048,10 +1501,10 @@ class _Screen2VoiceSheetState extends ConsumerState<Screen2VoiceSheet>
 
         // Rincian Catatan Suara (Flat Ledger Sheet)
         Container(
-          padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
           decoration: BoxDecoration(
             color: AppColors.surface,
-            borderRadius: BorderRadius.circular(20),
+            borderRadius: BorderRadius.circular(16),
             border: Border.all(color: AppColors.border),
             boxShadow: AppColors.cardShadow,
           ),
@@ -1110,10 +1563,10 @@ class _Screen2VoiceSheetState extends ConsumerState<Screen2VoiceSheet>
 
         // Kategori Kas & Cara Bayar
         Container(
-          padding: const EdgeInsets.all(18),
+          padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
             color: AppColors.surface,
-            borderRadius: BorderRadius.circular(20),
+            borderRadius: BorderRadius.circular(16),
             border: Border.all(color: AppColors.border),
             boxShadow: AppColors.cardShadow,
           ),
@@ -1703,34 +2156,6 @@ class _Screen2VoiceSheetState extends ConsumerState<Screen2VoiceSheet>
             fontSize: 11,
             fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
             color: selected ? AppColors.textPrimary : AppColors.textMuted,
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSampleSpeechPill({
-    required String label,
-    required bool isActive,
-    required VoidCallback onTap,
-  }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-        decoration: BoxDecoration(
-          color: isActive ? AppColors.primaryTealSoft : AppColors.background,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(
-            color: isActive ? AppColors.primaryTeal : AppColors.border,
-          ),
-        ),
-        child: Text(
-          label,
-          style: GoogleFonts.inter(
-            fontSize: 11,
-            fontWeight: isActive ? FontWeight.w600 : FontWeight.w500,
-            color: isActive ? AppColors.primaryTeal : AppColors.textSecondary,
           ),
         ),
       ),

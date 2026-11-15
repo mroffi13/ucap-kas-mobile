@@ -11,6 +11,7 @@ import '../../core/widgets/ucapkas_bottom_nav.dart';
 import '../../core/widgets/ucapkas_logo.dart';
 import '../../core/widgets/workspace_pill.dart';
 import '../../data/models/cash_transaction.dart';
+import '../../state/auth_provider.dart';
 import '../../state/ledger_providers.dart';
 
 class Screen1Dashboard extends ConsumerWidget {
@@ -18,12 +19,14 @@ class Screen1Dashboard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final isAuthenticated = ref.watch(
+      authProvider.select((s) => s.isAuthenticated),
+    );
     final workspace = ref.watch(activeWorkspaceProvider);
     final allTransactions = ref.watch(transactionsProvider);
     final transactions = allTransactions.take(4).toList();
     final isBalanceVisible = ref.watch(balanceVisibleProvider);
 
-    // Live calculation so newly added transactions update the hero card
     int liveInflowDelta = 0;
     int liveOutflowDelta = 0;
     for (final tx in allTransactions) {
@@ -37,9 +40,16 @@ class Screen1Dashboard extends ConsumerWidget {
     const seededOutflow = 180000 + 45000 + 320000;
     final extraInflow = (liveInflowDelta - seededInflow).clamp(0, 999999999);
     final extraOutflow = (liveOutflowDelta - seededOutflow).clamp(0, 999999999);
-    final currentBalance = workspace.balance + extraInflow - extraOutflow;
-    final currentMonthlyInflow = workspace.monthlyInflow + extraInflow;
-    final currentMonthlyOutflow = workspace.monthlyOutflow + extraOutflow;
+    final currentBalance = isAuthenticated
+        ? workspace.balance
+        : workspace.balance + extraInflow - extraOutflow;
+    final currentMonthlyInflow = isAuthenticated
+        ? workspace.monthlyInflow
+        : workspace.monthlyInflow + extraInflow;
+    final currentMonthlyOutflow = isAuthenticated
+        ? workspace.monthlyOutflow
+        : workspace.monthlyOutflow + extraOutflow;
+    final todayNetDelta = liveInflowDelta - liveOutflowDelta;
 
     return Scaffold(
       extendBody: true,
@@ -432,13 +442,17 @@ class Screen1Dashboard extends ConsumerWidget {
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          'Selisih hari ini: +Rp 320.000 (4 catatan)',
+                          isAuthenticated
+                              ? 'Selisih kas: ${RupiahFormatter.format(todayNetDelta, showSign: true)} (${allTransactions.length} catatan)'
+                              : 'Selisih hari ini: +Rp 320.000 (4 catatan)',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: GoogleFonts.inter(
                             fontSize: 11.5,
                             fontWeight: FontWeight.w500,
-                            color: AppColors.incomeEmerald,
+                            color: todayNetDelta >= 0
+                                ? AppColors.incomeEmerald
+                                : AppColors.expenseRose,
                           ),
                         ),
                       ],
@@ -478,23 +492,57 @@ class Screen1Dashboard extends ConsumerWidget {
                   border: Border.all(color: AppColors.border),
                   boxShadow: AppColors.cardShadow,
                 ),
-                child: Column(
-                  children: [
-                    for (int i = 0; i < transactions.length; i++) ...[
-                      if (i > 0)
-                        const Divider(
-                          height: 1,
-                          indent: 58,
-                          endIndent: 14,
-                          color: AppColors.border,
+                child: transactions.isEmpty
+                    ? Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 18,
+                          vertical: 24,
                         ),
-                      _TransactionTile(
-                        tx: transactions[i],
-                        onTap: () => context.push('/ubah-rincian'),
+                        child: Column(
+                          children: [
+                            const Icon(
+                              Icons.menu_book_rounded,
+                              size: 26,
+                              color: AppColors.textMuted,
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'Belum ada transaksi di Buku Kas ini',
+                              style: GoogleFonts.plusJakartaSans(
+                                fontSize: 13.5,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.textPrimary,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Tekan Catat Kas atau tombol Bicara untuk mencatat pemasukan & pengeluaran pertama Anda.',
+                              textAlign: TextAlign.center,
+                              style: GoogleFonts.inter(
+                                fontSize: 11.5,
+                                color: AppColors.textSecondary,
+                              ),
+                            ),
+                          ],
+                        ),
+                      )
+                    : Column(
+                        children: [
+                          for (int i = 0; i < transactions.length; i++) ...[
+                            if (i > 0)
+                              const Divider(
+                                height: 1,
+                                indent: 58,
+                                endIndent: 14,
+                                color: AppColors.border,
+                              ),
+                            _TransactionTile(
+                              tx: transactions[i],
+                              onTap: () => context.push('/ubah-rincian'),
+                            ),
+                          ],
+                        ],
                       ),
-                    ],
-                  ],
-                ),
               ),
             ],
           ),

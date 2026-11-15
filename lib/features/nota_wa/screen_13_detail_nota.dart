@@ -6,6 +6,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/rupiah_formatter.dart';
+import '../../core/widgets/ucapkas_toast.dart';
 import '../../data/models/cash_transaction.dart';
 import '../../data/models/nota_invoice.dart';
 import '../../state/ledger_providers.dart';
@@ -81,11 +82,12 @@ class Screen13DetailNota extends ConsumerWidget {
             padding: const EdgeInsets.only(right: 14),
             child: TextButton.icon(
               onPressed: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('PDF ${nota.number} berhasil disimpan'),
-                    behavior: SnackBarBehavior.floating,
-                  ),
+                UcapKasToast.showInfo(
+                  context,
+                  headerLabel: 'Nota PDF Disimpan',
+                  title: '${nota.number} · ${nota.clientName}',
+                  subtitle: 'Siap dikirim ke WhatsApp pelanggan',
+                  badgeText: 'PDF',
                 );
               },
               icon: const Icon(
@@ -355,11 +357,12 @@ class Screen13DetailNota extends ConsumerWidget {
                     GestureDetector(
                       onTap: () {
                         Clipboard.setData(ClipboardData(text: waMessage));
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Teks pesan disalin'),
-                            behavior: SnackBarBehavior.floating,
-                          ),
+                        UcapKasToast.showInfo(
+                          context,
+                          headerLabel: 'Teks Disalin',
+                          title: 'Pesan pengantar WhatsApp disalin',
+                          subtitle: 'Siap ditempel di chat pelanggan',
+                          badgeText: 'WA',
                         );
                       },
                       child: Text(
@@ -404,13 +407,12 @@ class Screen13DetailNota extends ConsumerWidget {
           child: isPaid
               ? ElevatedButton.icon(
                   onPressed: () {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(
-                          'Membuka WhatsApp ke ${nota.clientName}...',
-                        ),
-                        behavior: SnackBarBehavior.floating,
-                      ),
+                    UcapKasToast.showInfo(
+                      context,
+                      headerLabel: 'Membuka WhatsApp',
+                      title: 'Kirim bukti lunas ke ${nota.clientName}',
+                      subtitle: nota.number,
+                      badgeText: 'WA',
                     );
                   },
                   style: ElevatedButton.styleFrom(
@@ -479,13 +481,13 @@ class Screen13DetailNota extends ConsumerWidget {
                       flex: 3,
                       child: ElevatedButton.icon(
                         onPressed: () {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(
-                                'Membuka WhatsApp untuk menagih ${nota.clientName}...',
-                              ),
-                              behavior: SnackBarBehavior.floating,
-                            ),
+                          UcapKasToast.showInfo(
+                            context,
+                            headerLabel: 'Membuka WhatsApp',
+                            title: 'Menagih ${nota.clientName}',
+                            subtitle:
+                                '${nota.number} · ${RupiahFormatter.format(nota.amount)}',
+                            badgeText: 'WA',
                           );
                         },
                         style: ElevatedButton.styleFrom(

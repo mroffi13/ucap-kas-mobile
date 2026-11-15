@@ -7,6 +7,7 @@ import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/rupiah_formatter.dart';
 import '../../core/widgets/ucapkas_bottom_nav.dart';
+import '../../core/widgets/ucapkas_toast.dart';
 import '../../core/widgets/workspace_pill.dart';
 import '../../data/models/cash_transaction.dart';
 import '../../state/ledger_providers.dart';
@@ -43,157 +44,314 @@ class _Screen12RiwayatKasState extends ConsumerState<Screen12RiwayatKas> {
 
   void _showTransactionDetailSheet(BuildContext context, CashTransaction tx) {
     final isIn = tx.isInflow;
+    final brightAccent =
+        isIn ? AppColors.incomeEmeraldBright : AppColors.expenseRoseBright;
+    final maxHeight = MediaQuery.sizeOf(context).height * 0.86;
+
     showModalBottomSheet<void>(
       context: context,
+      isScrollControlled: true,
       backgroundColor: AppColors.surface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       builder: (sheetCtx) {
-        return Padding(
-          padding: const EdgeInsets.fromLTRB(20, 14, 20, 28),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Center(
-                child: Container(
-                  width: 36,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: AppColors.borderStrong,
-                    borderRadius: BorderRadius.circular(99),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 4.5,
-                    ),
+        return SafeArea(
+          top: false,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxHeight: maxHeight),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const SizedBox(height: 12),
+                Center(
+                  child: Container(
+                    width: 36,
+                    height: 4,
                     decoration: BoxDecoration(
-                      color: isIn ? AppColors.incomeSoft : AppColors.expenseSoft,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      isIn ? 'KAS MASUK' : 'KAS KELUAR',
-                      style: GoogleFonts.inter(
-                        fontSize: 10.5,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 0.4,
-                        color: isIn
-                            ? AppColors.incomeEmerald
-                            : AppColors.expenseRose,
-                      ),
+                      color: AppColors.borderStrong,
+                      borderRadius: BorderRadius.circular(99),
                     ),
                   ),
-                  Text(
-                    'Pukul ${tx.timeLabel} WIB',
-                    style: GoogleFonts.inter(
-                      fontSize: 12,
-                      color: AppColors.textMuted,
+                ),
+                const SizedBox(height: 14),
+                Flexible(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        // Dark Nordic Ledger Receipt Header
+                        Container(
+                          padding: const EdgeInsets.all(18),
+                          decoration: BoxDecoration(
+                            color: AppColors.heroDark,
+                            borderRadius: BorderRadius.circular(16),
+                            boxShadow: AppColors.heroShadow,
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 9,
+                                      vertical: 4,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: brightAccent.withValues(alpha: 0.16),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Text(
+                                      isIn ? 'KAS MASUK' : 'KAS KELUAR',
+                                      style: GoogleFonts.inter(
+                                        fontSize: 10.5,
+                                        fontWeight: FontWeight.w700,
+                                        letterSpacing: 0.5,
+                                        color: brightAccent,
+                                      ),
+                                    ),
+                                  ),
+                                  Flexible(
+                                    child: Text(
+                                      '${tx.dateGroup} · ${tx.timeLabel} WIB',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: GoogleFonts.inter(
+                                        fontSize: 11.5,
+                                        fontWeight: FontWeight.w500,
+                                        color: AppColors.darkTextMuted,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 14),
+                              Text(
+                                tx.title,
+                                style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.w700,
+                                  height: 1.3,
+                                  color: Colors.white,
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                RupiahFormatter.format(
+                                  tx.amount,
+                                  showSign: true,
+                                ),
+                                style: AppTheme.numStyle(
+                                  fontSize: 28,
+                                  color: brightAccent,
+                                  letterSpacing: -0.8,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+
+                        // Flat Editorial Metadata List (hairline dividers, no nested box)
+                        _buildDetailMetaRow('Kategori Kas', tx.category),
+                        const Divider(height: 20, color: AppColors.border),
+                        _buildDetailMetaRow(
+                          'Metode Pembayaran',
+                          tx.paymentMethod,
+                        ),
+                        if (tx.customerName != null &&
+                            tx.customerName!.trim().isNotEmpty) ...[
+                          const Divider(height: 20, color: AppColors.border),
+                          _buildDetailMetaRow(
+                            'Catatan / Petugas',
+                            tx.customerName!,
+                          ),
+                        ],
+                        if (tx.notaRef != null &&
+                            tx.notaRef!.trim().isNotEmpty) ...[
+                          const Divider(height: 20, color: AppColors.border),
+                          _buildDetailMetaRow('Referensi Tagihan', tx.notaRef!),
+                        ],
+
+                        // Itemized Receipt Breakdown
+                        if (tx.items.isNotEmpty) ...[
+                          const Divider(height: 22, color: AppColors.border),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                'Rincian Barang',
+                                style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 13.5,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.textPrimary,
+                                ),
+                              ),
+                              Text(
+                                '${tx.items.length} item',
+                                style: GoogleFonts.inter(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppColors.textMuted,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 10),
+                          for (int i = 0; i < tx.items.length; i++) ...[
+                            if (i > 0)
+                              const Divider(
+                                height: 14,
+                                color: AppColors.border,
+                              ),
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        tx.items[i].name,
+                                        style: GoogleFonts.inter(
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w600,
+                                          color: AppColors.textPrimary,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        '${tx.items[i].quantity} × ${RupiahFormatter.format(tx.items[i].unitPrice)}',
+                                        style: GoogleFonts.inter(
+                                          fontSize: 11.5,
+                                          color: AppColors.textMuted,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Text(
+                                  RupiahFormatter.format(tx.items[i].subtotal),
+                                  style: AppTheme.numStyle(
+                                    fontSize: 13.5,
+                                    color: AppColors.textPrimary,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ],
+                        const SizedBox(height: 14),
+                      ],
                     ),
                   ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Text(
-                tx.title,
-                style: GoogleFonts.plusJakartaSans(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.textPrimary,
                 ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                RupiahFormatter.format(tx.amount, showSign: true),
-                style: AppTheme.numStyle(
-                  fontSize: 26,
-                  color: isIn ? AppColors.incomeEmerald : AppColors.expenseRose,
-                ),
-              ),
-              const SizedBox(height: 16),
-              Container(
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: AppColors.background,
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: AppColors.border),
-                ),
-                child: Column(
-                  children: [
-                    _buildDetailMetaRow('Kategori Kas', tx.category),
-                    const Divider(height: 18, color: AppColors.border),
-                    _buildDetailMetaRow('Metode Pembayaran', tx.paymentMethod),
-                    if (tx.customerName != null) ...[
-                      const Divider(height: 18, color: AppColors.border),
-                      _buildDetailMetaRow('Catatan / Petugas', tx.customerName!),
-                    ],
-                    if (tx.notaRef != null) ...[
-                      const Divider(height: 18, color: AppColors.border),
-                      _buildDetailMetaRow('Referensi Tagihan', tx.notaRef!),
-                    ],
-                  ],
-                ),
-              ),
-              const SizedBox(height: 18),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      style: OutlinedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 13),
-                        side: const BorderSide(color: AppColors.borderStrong),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
+
+                // Sticky Bottom Action Bar
+                Container(
+                  padding: const EdgeInsets.fromLTRB(20, 12, 20, 18),
+                  decoration: const BoxDecoration(
+                    color: AppColors.surface,
+                    border: Border(top: BorderSide(color: AppColors.border)),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: AppColors.expenseRose,
+                            minimumSize: const Size.fromHeight(48),
+                            side: BorderSide(
+                              color:
+                                  AppColors.expenseRose.withValues(alpha: 0.35),
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          onPressed: () async {
+                            Navigator.of(sheetCtx).pop();
+                            final ok = await ref
+                                .read(transactionsProvider.notifier)
+                                .deleteTransaction(tx.id);
+                            if (context.mounted) {
+                              UcapKasToast.show(
+                                context,
+                                type: UcapKasToastType.kasKeluar,
+                                headerLabel: ok
+                                    ? 'Catatan Kas Dihapus'
+                                    : 'Gagal Menghapus',
+                                title: tx.title,
+                                subtitle: ok
+                                    ? 'Saldo Buku Kas telah diperbarui otomatis'
+                                    : 'Periksa koneksi internet Anda',
+                                amountText: RupiahFormatter.format(
+                                  tx.amount,
+                                  showSign: true,
+                                ),
+                              );
+                            }
+                          },
+                          icon: const Icon(
+                            Icons.delete_outline_rounded,
+                            size: 17,
+                          ),
+                          label: Text(
+                            'Hapus Catatan',
+                            style: GoogleFonts.inter(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
                         ),
                       ),
-                      onPressed: () {
-                        Navigator.of(sheetCtx).pop();
-                        context.push('/ubah-rincian');
-                      },
-                      icon: const Icon(Icons.edit_outlined, size: 16),
-                      label: const Text('Ubah Rincian'),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.primaryTeal,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 13),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            elevation: 0,
+                            backgroundColor: AppColors.primaryTeal,
+                            foregroundColor: Colors.white,
+                            minimumSize: const Size.fromHeight(48),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          onPressed: () {
+                            Navigator.of(sheetCtx).pop();
+                            if (tx.notaRef != null) {
+                              context.push('/detail-nota');
+                            } else {
+                              context.push('/catat-manual');
+                            }
+                          },
+                          icon: Icon(
+                            tx.notaRef != null
+                                ? Icons.receipt_long_outlined
+                                : Icons.add_rounded,
+                            size: 17,
+                          ),
+                          label: Text(
+                            tx.notaRef != null ? 'Lihat Nota' : 'Catat Serupa',
+                            style: GoogleFonts.inter(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
                         ),
                       ),
-                      onPressed: () {
-                        Navigator.of(sheetCtx).pop();
-                        if (tx.notaRef != null) {
-                          context.push('/detail-nota');
-                        } else {
-                          context.push('/catat-manual');
-                        }
-                      },
-                      icon: Icon(
-                        tx.notaRef != null
-                            ? Icons.receipt_long_outlined
-                            : Icons.add_rounded,
-                        size: 16,
-                      ),
-                      label: Text(
-                        tx.notaRef != null ? 'Lihat Nota' : 'Catat Serupa',
-                      ),
-                    ),
+                    ],
                   ),
-                ],
-              ),
-            ],
+                ),
+              ],
+            ),
           ),
         );
       },

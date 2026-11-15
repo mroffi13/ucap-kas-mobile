@@ -1,23 +1,26 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/widgets/ucapkas_logo.dart';
+import '../../state/auth_provider.dart';
 
-class ScreenSplash extends StatefulWidget {
+class ScreenSplash extends ConsumerStatefulWidget {
   const ScreenSplash({super.key});
 
   @override
-  State<ScreenSplash> createState() => _ScreenSplashState();
+  ConsumerState<ScreenSplash> createState() => _ScreenSplashState();
 }
 
-class _ScreenSplashState extends State<ScreenSplash>
+class _ScreenSplashState extends ConsumerState<ScreenSplash>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
   late final Animation<double> _fadeAnim;
   late final Animation<double> _slideAnim;
   Timer? _navTimer;
+  Future<bool>? _restoreFuture;
 
   @override
   void initState() {
@@ -37,14 +40,20 @@ class _ScreenSplashState extends State<ScreenSplash>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _controller.forward();
-      _navTimer = Timer(const Duration(milliseconds: 6000), _goToLogin);
+      _restoreFuture = ref.read(authProvider.notifier).restoreSession();
+      _navTimer = Timer(const Duration(milliseconds: 6000), _finishSplash);
     });
   }
 
-  void _goToLogin() {
+  Future<void> _finishSplash() async {
     if (!mounted) return;
     _navTimer?.cancel();
-    context.go('/onboarding');
+    if (_restoreFuture != null) {
+      await _restoreFuture;
+    }
+    if (!mounted) return;
+    final isAuthenticated = ref.read(authProvider).isAuthenticated;
+    context.go(isAuthenticated ? '/kas' : '/onboarding');
   }
 
   @override
@@ -60,7 +69,7 @@ class _ScreenSplashState extends State<ScreenSplash>
       backgroundColor: AppColors.background,
       body: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTap: _goToLogin,
+        onTap: _finishSplash,
         child: SafeArea(
           child: AnimatedBuilder(
             animation: _controller,
@@ -78,13 +87,11 @@ class _ScreenSplashState extends State<ScreenSplash>
               child: Column(
                 children: [
                   const Spacer(flex: 5),
-                  // Pure Brand Mark: No concentric rings, no extra boxes
                   const UcapKasLogo(
                     size: 72,
                     showWordmark: false,
                   ),
                   const SizedBox(height: 22),
-                  // Wordmark UcapKas
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
@@ -111,7 +118,6 @@ class _ScreenSplashState extends State<ScreenSplash>
                     ],
                   ),
                   const SizedBox(height: 8),
-                  // Single grounded Indonesian line, zero buzzwords
                   Text(
                     'Tinggal ngomong, kas rapi.',
                     style: GoogleFonts.inter(

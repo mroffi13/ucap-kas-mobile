@@ -3,6 +3,121 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ucapkas_app/app.dart';
 import 'package:ucapkas_app/core/widgets/ucapkas_logo.dart';
+import 'package:ucapkas_app/data/models/auth_user.dart';
+import 'package:ucapkas_app/data/models/cash_transaction.dart';
+import 'package:ucapkas_app/data/models/workspace.dart';
+import 'package:ucapkas_app/data/repositories/auth_repository.dart';
+import 'package:ucapkas_app/data/repositories/ledger_repository.dart';
+import 'package:ucapkas_app/data/repositories/mock_ledger_data.dart';
+import 'package:ucapkas_app/state/auth_provider.dart';
+import 'package:ucapkas_app/state/ledger_providers.dart';
+
+class _WidgetTestLedgerRepository implements LedgerRepository {
+  @override
+  Future<List<Workspace>> listWorkspaces() async => MockLedgerData.workspaces;
+
+  @override
+  Future<WorkspaceMutationResult> createWorkspace({
+    required String name,
+    required String shortName,
+    required String focusType,
+    String bankName = '',
+    String bankAccountNumber = '',
+    String bankAccountHolder = '',
+  }) async {
+    return const WorkspaceMutationResult(
+      workspace: null,
+      workspaces: MockLedgerData.workspaces,
+    );
+  }
+
+  @override
+  Future<WorkspaceMutationResult> updateWorkspace({
+    required String workspaceId,
+    required String name,
+    required String shortName,
+    required String focusType,
+    String bankName = '',
+    String bankAccountNumber = '',
+    String bankAccountHolder = '',
+  }) async {
+    return const WorkspaceMutationResult(
+      workspace: null,
+      workspaces: MockLedgerData.workspaces,
+    );
+  }
+
+  @override
+  Future<LedgerTransactionsResult> listTransactions(String workspaceId) async {
+    return const LedgerTransactionsResult(
+      transactions: MockLedgerData.initialTransactions,
+      workspaces: MockLedgerData.workspaces,
+    );
+  }
+
+  @override
+  Future<CreateTransactionResult> createTransaction({
+    required String workspaceId,
+    required String title,
+    required bool isInflow,
+    required int amount,
+    required String category,
+    required String paymentMethod,
+    String customerName = '',
+    String notaRef = '',
+    bool hasReceiptPhoto = false,
+    String source = 'manual',
+    List<TransactionLineItem> items = const [],
+  }) async {
+    return CreateTransactionResult(
+      transaction: CashTransaction(
+        id: 'server-tx-1',
+        title: title,
+        category: category,
+        paymentMethod: paymentMethod,
+        timeLabel: 'Baru saja',
+        dateGroup: 'Hari Ini',
+        amount: isInflow ? amount : -amount,
+        items: items,
+      ),
+      workspaces: MockLedgerData.workspaces,
+    );
+  }
+
+  @override
+  Future<List<Workspace>> deleteTransaction({
+    required String workspaceId,
+    required String transactionId,
+  }) async {
+    return MockLedgerData.workspaces;
+  }
+}
+
+class _WidgetTestAuthRepository implements AuthRepository {
+  @override
+  Future<AuthSessionBundle?> tryRestoreSession() async => null;
+
+  @override
+  Future<AuthSessionBundle> signInWithGoogle({
+    required String selectedFocus,
+  }) async {
+    return const AuthSessionBundle(
+      accessToken: 'test_access_token',
+      refreshToken: 'test_refresh_token',
+      expiresIn: 900,
+      user: AuthUser(
+        id: '01932c00-0000-7000-8000-000000000010',
+        email: 'hendra.jaya@gmail.com',
+        fullName: 'Hendra Jaya',
+        planTier: 'umkm_pro',
+      ),
+      workspaces: MockLedgerData.workspaces,
+    );
+  }
+
+  @override
+  Future<void> signOut() async {}
+}
 
 void main() {
   testWidgets('UcapKasApp boots into Splash -> Login -> Dashboard and navigates tabs', (tester) async {
@@ -12,8 +127,12 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
 
     await tester.pumpWidget(
-      const ProviderScope(
-        child: UcapKasApp(),
+      ProviderScope(
+        overrides: [
+          authRepositoryProvider.overrideWithValue(_WidgetTestAuthRepository()),
+          ledgerRepositoryProvider.overrideWithValue(_WidgetTestLedgerRepository()),
+        ],
+        child: const UcapKasApp(),
       ),
     );
     await tester.pump();
@@ -117,5 +236,44 @@ void main() {
 
     expect(find.text('Rincian Catatan Suara'), findsOneWidget);
     expect(find.text('Push-to-Talk'), findsOneWidget);
+  });
+
+  test('CashTransaction.fromJson parses manual (0 items) and itemized (1..N items) payloads', () {
+    final manualTx = CashTransaction.fromJson({
+      'id': '01932c11-0000-7000-8000-000000000001',
+      'title': 'Servis Ganti Oli',
+      'type': 'inflow',
+      'amount': 125000,
+      'category': 'Servis',
+      'payment_method': 'QRIS',
+      'time_label': '14:30',
+      'date_group': 'Hari Ini',
+      'source': 'manual',
+      'items': [],
+    });
+    expect(manualTx.isInflow, isTrue);
+    expect(manualTx.amount, 125000);
+    expect(manualTx.items, isEmpty);
+
+    final itemizedTx = CashTransaction.fromJson({
+      'id': '01932c11-0000-7000-8000-000000000002',
+      'title': 'Belanja Onderdil',
+      'type': 'outflow',
+      'amount': 85000,
+      'category': 'Bahan Baku',
+      'payment_method': 'Tunai',
+      'time_label': '15:10',
+      'date_group': 'Hari Ini',
+      'source': 'receipt_ai',
+      'has_receipt_photo': true,
+      'items': [
+        {'name': 'Kampas Rem', 'quantity': 2, 'unit_price': 25000},
+        {'name': 'Busi Iridium', 'quantity': 1, 'unit_price': 35000},
+      ],
+    });
+    expect(itemizedTx.isInflow, isFalse);
+    expect(itemizedTx.amount, -85000);
+    expect(itemizedTx.items.length, 2);
+    expect(itemizedTx.items.first.subtotal, 50000);
   });
 }

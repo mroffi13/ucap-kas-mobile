@@ -7,6 +7,8 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/ucapkas_logo.dart';
+import '../../core/widgets/ucapkas_toast.dart';
+import '../../state/auth_provider.dart';
 import '../../state/ledger_providers.dart';
 
 class _LedgerSpecimen {
@@ -169,7 +171,39 @@ class _Screen0OnboardingState extends ConsumerState<Screen0Onboarding>
     _waveController.forward(from: 0);
   }
 
-  void _loginAndContinue() {
+  static const List<String> _focusKeys = [
+    'umkm',
+    'rumah_tangga',
+    'komunitas',
+  ];
+
+  Future<void> _handleGoogleLogin() async {
+    if (ref.read(authProvider).isLoading) return;
+    HapticFeedback.mediumImpact();
+    final focusKey = _focusKeys[_selectedIndex.clamp(0, _focusKeys.length - 1)];
+    final success = await ref
+        .read(authProvider.notifier)
+        .signInWithGoogle(selectedFocus: focusKey);
+    if (!mounted) return;
+    if (success) {
+      ref.read(activeWorkspaceIndexProvider.notifier).state = 0;
+      context.go('/kas');
+      return;
+    }
+    final errMsg = ref.read(authProvider).errorMessage;
+    if (errMsg != null && errMsg.isNotEmpty) {
+      UcapKasToast.showInfo(
+        context,
+        headerLabel: 'Gagal Masuk Google',
+        title: 'Belum berhasil masuk',
+        subtitle: errMsg,
+        badgeText: 'Coba Lagi',
+      );
+    }
+  }
+
+  void _skipAsGuest() {
+    ref.read(authProvider.notifier).enterGuestMode();
     final workspaces = ref.read(workspacesProvider);
     final specimen = _specimens[_selectedIndex];
     final targetIdx = specimen.workspaceIndex.clamp(0, workspaces.length - 1);
@@ -206,6 +240,7 @@ class _Screen0OnboardingState extends ConsumerState<Screen0Onboarding>
   Widget build(BuildContext context) {
     final reduceMotion = MediaQuery.disableAnimationsOf(context);
     final specimen = _specimens[_selectedIndex];
+    final authState = ref.watch(authProvider);
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -372,7 +407,7 @@ class _Screen0OnboardingState extends ConsumerState<Screen0Onboarding>
                               _TactilePressable(
                                 key: const Key('btn_login_google'),
                                 semanticLabel: 'Masuk Lewat Google',
-                                onTap: _loginAndContinue,
+                                onTap: _handleGoogleLogin,
                                 child: Container(
                                   constraints:
                                       const BoxConstraints(minHeight: 52),
@@ -412,7 +447,9 @@ class _Screen0OnboardingState extends ConsumerState<Screen0Onboarding>
                                       const SizedBox(width: 12),
                                       Expanded(
                                         child: Text(
-                                          'Masuk Lewat Google',
+                                          authState.isLoading
+                                              ? 'Menghubungkan Akun Google...'
+                                              : 'Masuk Lewat Google',
                                           maxLines: 1,
                                           overflow: TextOverflow.ellipsis,
                                           style: GoogleFonts.inter(
@@ -423,11 +460,24 @@ class _Screen0OnboardingState extends ConsumerState<Screen0Onboarding>
                                           ),
                                         ),
                                       ),
-                                      const Icon(
-                                        Icons.arrow_forward_rounded,
-                                        size: 18,
-                                        color: Colors.white,
-                                      ),
+                                      if (authState.isLoading)
+                                        const SizedBox(
+                                          width: 18,
+                                          height: 18,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2.2,
+                                            valueColor:
+                                                AlwaysStoppedAnimation<Color>(
+                                              Colors.white,
+                                            ),
+                                          ),
+                                        )
+                                      else
+                                        const Icon(
+                                          Icons.arrow_forward_rounded,
+                                          size: 18,
+                                          color: Colors.white,
+                                        ),
                                     ],
                                   ),
                                 ),
@@ -439,17 +489,22 @@ class _Screen0OnboardingState extends ConsumerState<Screen0Onboarding>
                                 mainAxisAlignment:
                                     MainAxisAlignment.spaceBetween,
                                 children: [
-                                  Text(
-                                    'Privasi & Ketentuan Layanan',
-                                    style: GoogleFonts.inter(
-                                      fontSize: 11.5,
-                                      color: AppColors.textMuted,
+                                  Flexible(
+                                    child: Text(
+                                      'Privasi & Ketentuan Layanan',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: GoogleFonts.inter(
+                                        fontSize: 11.5,
+                                        color: AppColors.textMuted,
+                                      ),
                                     ),
                                   ),
+                                  const SizedBox(width: 8),
                                   _TactilePressable(
                                     key: const Key('btn_skip_onboarding'),
                                     semanticLabel: 'Lewati dan coba dulu',
-                                    onTap: _loginAndContinue,
+                                    onTap: _skipAsGuest,
                                     child: Padding(
                                       padding: const EdgeInsets.symmetric(
                                         vertical: 4,

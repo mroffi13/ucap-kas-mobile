@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../state/ledger_providers.dart';
 import '../theme/app_colors.dart';
+import '../utils/native_voice_recorder.dart';
 import '../utils/rupiah_formatter.dart';
 import '../utils/slang_parser.dart';
 
@@ -55,6 +56,10 @@ class _UcapKasBottomNavBarState extends State<UcapKasBottomNavBar> {
   int _elapsedSeconds = 1;
   int _wavePhase = 0;
 
+  final NativeVoiceRecorder _audioRecorder = NativeVoiceRecorder();
+  bool _isRecorderActive = false;
+  final String _liveRecognizedText = '';
+
   static const List<double> _baseWaveHeights = [
     8,
     14,
@@ -94,6 +99,9 @@ class _UcapKasBottomNavBarState extends State<UcapKasBottomNavBar> {
     _holdDetectTimer?.cancel();
     _recordStopwatchTimer?.cancel();
     _cancelFeedbackTimer?.cancel();
+    try {
+      _audioRecorder.dispose();
+    } catch (_) {}
     super.dispose();
   }
 
@@ -128,6 +136,32 @@ class _UcapKasBottomNavBarState extends State<UcapKasBottomNavBar> {
     });
   }
 
+  Future<void> _startNativeSpeechListening() async {
+    try {
+      final hasPerm = await _audioRecorder.hasPermission();
+      if (!hasPerm || !mounted || _recordMode == VoiceRecordMode.idle) return;
+      final startedPath = await _audioRecorder.start();
+      _isRecorderActive = startedPath != null && startedPath.isNotEmpty;
+    } catch (_) {
+      // Safe fallback in widget tests or emulators without hardware mic
+      _isRecorderActive = false;
+    }
+  }
+
+  Future<String?> _stopNativeSpeechListening({bool cancel = false}) async {
+    try {
+      if (_isRecorderActive) {
+        _isRecorderActive = false;
+        if (cancel) {
+          await _audioRecorder.cancel();
+          return null;
+        }
+        return await _audioRecorder.stopAndEncodeBase64();
+      }
+    } catch (_) {}
+    return null;
+  }
+
   void _enterTapRecording() {
     HapticFeedback.lightImpact();
     _cancelFeedbackTimer?.cancel();
@@ -138,6 +172,7 @@ class _UcapKasBottomNavBarState extends State<UcapKasBottomNavBar> {
       _isCancelZone = false;
     });
     _startStopwatch();
+    _startNativeSpeechListening();
   }
 
   void _enterHoldPushToTalk() {
@@ -148,12 +183,14 @@ class _UcapKasBottomNavBarState extends State<UcapKasBottomNavBar> {
       _recordMode = VoiceRecordMode.holdPushToTalk;
     });
     _startStopwatch();
+    _startNativeSpeechListening();
   }
 
   void _cancelRecording() {
     _holdDetectTimer?.cancel();
     _recordStopwatchTimer?.cancel();
     _cancelFeedbackTimer?.cancel();
+    _stopNativeSpeechListening(cancel: true);
     HapticFeedback.vibrate();
     setState(() {
       _recordMode = VoiceRecordMode.idle;
@@ -171,7 +208,7 @@ class _UcapKasBottomNavBarState extends State<UcapKasBottomNavBar> {
     });
   }
 
-  void _finishAndProcessRecording() {
+  Future<void> _finishAndProcessRecording() async {
     final wasPtt = _recordMode == VoiceRecordMode.holdPushToTalk;
     final recordedSec = _elapsedSeconds < 2 ? 4 : _elapsedSeconds;
 
@@ -187,21 +224,33 @@ class _UcapKasBottomNavBarState extends State<UcapKasBottomNavBar> {
       _showCancelledBanner = false;
     });
 
-    // Save session metadata if inside a Riverpod ProviderScope
+    final fallbackTranscript = widget.currentIndex == 1
+        ? VoiceRecordingSession.sampleInvoiceSpeech
+        : VoiceRecordingSession.sampleKasSpeech;
+
+    ProviderContainer? container;
     try {
-      final container = ProviderScope.containerOf(context, listen: false);
-      container.read(lastVoiceSessionProvider.notifier).state =
-          VoiceRecordingSession(
-        durationSeconds: recordedSec,
-        isPushToTalk: wasPtt,
-        transcript: widget.currentIndex == 1
-            ? VoiceRecordingSession.sampleInvoiceSpeech
-            : VoiceRecordingSession.sampleKasSpeech,
-      );
+      container = ProviderScope.containerOf(context, listen: false);
     } catch (_) {
       // Ignore when tested standalone without ProviderScope
     }
 
+    // Stop hardware audio recorder and attach base64 audio for Whisper / 9Router STT
+    final audioB64 = await _stopNativeSpeechListening(cancel: false);
+    final hasRealAudio = audioB64 != null && audioB64.isNotEmpty;
+
+    if (container != null) {
+      container.read(lastVoiceSessionProvider.notifier).state =
+          VoiceRecordingSession(
+        durationSeconds: recordedSec,
+        isPushToTalk: wasPtt,
+        transcript: hasRealAudio ? '' : fallbackTranscript,
+        audioBase64: hasRealAudio ? audioB64 : '',
+        mimeType: 'audio/mp4',
+      );
+    }
+
+    if (!mounted) return;
     if (widget.onBicaraPressed != null) {
       widget.onBicaraPressed!();
       return;
@@ -895,9 +944,11 @@ class _UcapKasBottomNavBarState extends State<UcapKasBottomNavBar> {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    widget.currentIndex == 1
-                        ? '"${VoiceRecordingSession.sampleInvoiceSpeech}"'
-                        : '"${VoiceRecordingSession.sampleKasSpeech}"',
+                    _liveRecognizedText.isNotEmpty
+                        ? '"$_liveRecognizedText"'
+                        : (widget.currentIndex == 1
+                            ? '"${VoiceRecordingSession.sampleInvoiceSpeech}"'
+                            : '"${VoiceRecordingSession.sampleKasSpeech}"'),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: GoogleFonts.inter(

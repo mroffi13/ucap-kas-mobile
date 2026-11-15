@@ -1,17 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/rupiah_formatter.dart';
 import '../../core/widgets/ucapkas_toast.dart';
+import '../../data/models/cash_transaction.dart';
+import '../../state/ledger_providers.dart';
 
-class Screen5UbahRincian extends StatefulWidget {
+class Screen5UbahRincian extends ConsumerStatefulWidget {
   const Screen5UbahRincian({super.key});
 
   @override
-  State<Screen5UbahRincian> createState() => _Screen5UbahRincianState();
+  ConsumerState<Screen5UbahRincian> createState() => _Screen5UbahRincianState();
 }
 
 class _EditableDetailItem {
@@ -53,7 +56,7 @@ class _EditableDetailItem {
   }
 }
 
-class _Screen5UbahRincianState extends State<Screen5UbahRincian> {
+class _Screen5UbahRincianState extends ConsumerState<Screen5UbahRincian> {
   late final TextEditingController _storeController;
   late final TextEditingController _categoryController;
   late final List<_EditableDetailItem> _items;
@@ -69,26 +72,27 @@ class _Screen5UbahRincianState extends State<Screen5UbahRincian> {
   @override
   void initState() {
     super.initState();
-    _storeController =
-        TextEditingController(text: 'Toko Onderdil Motor & Mobil Jaya');
-    _categoryController = TextEditingController(text: 'Bahan Baku');
-    _items = [
-      _EditableDetailItem(
-        name: 'Kampas Rem Depan Honda Beat (2 Set)',
-        quantity: 2,
-        unitPrice: 45000,
-      ),
-      _EditableDetailItem(
-        name: 'Oli Mesin Shell Advance AX7 1L',
-        quantity: 1,
-        unitPrice: 65000,
-      ),
-      _EditableDetailItem(
-        name: 'Cairan Pembersih Karburator & Baut',
-        quantity: 1,
-        unitPrice: 25000,
-      ),
-    ];
+    final draft = ref.read(parsedReceiptDraftProvider);
+    _storeController = TextEditingController(text: draft.storeName);
+    _categoryController = TextEditingController(text: draft.category);
+    _items = draft.items
+        .map(
+          (e) => _EditableDetailItem(
+            name: e.name,
+            quantity: e.quantity,
+            unitPrice: e.unitPrice,
+          ),
+        )
+        .toList();
+    if (_items.isEmpty) {
+      _items.add(
+        _EditableDetailItem(
+          name: 'Kampas Rem Depan Honda Beat (2 Set)',
+          quantity: 2,
+          unitPrice: 45000,
+        ),
+      );
+    }
   }
 
   @override
@@ -433,13 +437,50 @@ class _Screen5UbahRincianState extends State<Screen5UbahRincian> {
                 final catName = _categoryController.text.trim().isEmpty
                     ? 'Bahan Baku'
                     : _categoryController.text.trim();
+                final lineItems = _items
+                    .map(
+                      (e) => TransactionLineItem(
+                        name: e.nameController.text.trim().isEmpty
+                            ? 'Barang'
+                            : e.nameController.text.trim(),
+                        quantity: e.quantity > 0 ? e.quantity : 1,
+                        unitPrice: e.unitPrice >= 0 ? e.unitPrice : 0,
+                      ),
+                    )
+                    .toList();
+                final total = _grandTotal > 0 ? _grandTotal : 50000;
+                final currentDraft = ref.read(parsedReceiptDraftProvider);
+                ref.read(parsedReceiptDraftProvider.notifier).state =
+                    currentDraft.copyWith(
+                  storeName: storeName,
+                  category: catName,
+                  items: lineItems,
+                  totalAmount: total,
+                );
+
+                ref.read(transactionsProvider.notifier).addTransaction(
+                      CashTransaction(
+                        id: 'tx-${DateTime.now().millisecondsSinceEpoch}',
+                        title: storeName,
+                        category: catName,
+                        paymentMethod: currentDraft.paymentMethod,
+                        timeLabel: 'Baru saja',
+                        dateGroup: 'Hari Ini',
+                        amount: -total,
+                        hasReceiptPhoto: true,
+                        source: 'receipt_ai',
+                        items: lineItems,
+                      ),
+                      source: 'receipt_ai',
+                    );
+
                 UcapKasToast.showKasKeluar(
                   context,
                   title: storeName,
-                  amount: _grandTotal,
-                  subtitle: '$catName • ${_items.length} Barang',
+                  amount: total,
+                  subtitle: '$catName • ${lineItems.length} Barang',
                 );
-                context.go('/dashboard');
+                context.go('/kas');
               },
               child: Text(
                 'Simpan Perubahan & Catat Kas',

@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/widgets/ucapkas_toast.dart';
 import '../../state/ledger_providers.dart';
 
 class Screen11BayarQris extends ConsumerWidget {
@@ -184,13 +185,12 @@ class Screen11BayarQris extends ConsumerWidget {
             GestureDetector(
               onTap: () {
                 HapticFeedback.selectionClick();
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text(
-                      'Nomor BCA Virtual Account (88012839401) disalin',
-                    ),
-                    behavior: SnackBarBehavior.floating,
-                  ),
+                UcapKasToast.showInfo(
+                  context,
+                  headerLabel: 'Nomor VA Disalin',
+                  title: 'BCA Virtual Account: 88012839401',
+                  subtitle: 'Tempel di aplikasi m-BCA Anda',
+                  badgeText: 'BCA',
                 );
               },
               child: Container(
@@ -246,11 +246,12 @@ class Screen11BayarQris extends ConsumerWidget {
                   ),
                 ),
                 onPressed: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Status Paket Usaha terverifikasi aktif'),
-                      behavior: SnackBarBehavior.floating,
-                    ),
+                  UcapKasToast.showInfo(
+                    context,
+                    headerLabel: 'Pembayaran Terverifikasi',
+                    title: 'Paket Usaha Aktif',
+                    subtitle: 'Seluruh fitur AI & Multi-Kas telah dibuka',
+                    badgeText: 'PRO',
                   );
                   context.go('/akun');
                 },

@@ -7,6 +7,7 @@ import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/rupiah_formatter.dart';
 import '../../core/widgets/ucapkas_bottom_nav.dart';
+import '../../core/widgets/ucapkas_toast.dart';
 import '../../core/widgets/workspace_pill.dart';
 import '../../data/repositories/mock_ledger_data.dart';
 import '../../state/ledger_providers.dart';
@@ -614,13 +615,12 @@ class _Screen8LaporanState extends ConsumerState<Screen8Laporan> {
                       ),
                     ),
                     onPressed: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(
-                            'File Excel (${ws.shortName} · ${activeMonth.fullLabel}) berhasil diekspor',
-                          ),
-                          behavior: SnackBarBehavior.floating,
-                        ),
+                      UcapKasToast.showInfo(
+                        context,
+                        headerLabel: 'Laporan Excel Diekspor',
+                        title: '${ws.shortName} · ${activeMonth.fullLabel}',
+                        subtitle: 'Tersimpan di folder Unduhan HP Anda',
+                        badgeText: 'XLSX',
                       );
                     },
                     icon: const Icon(
@@ -650,13 +650,12 @@ class _Screen8LaporanState extends ConsumerState<Screen8Laporan> {
                       ),
                     ),
                     onPressed: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(
-                            'Laporan PDF (${ws.shortName} · ${activeMonth.fullLabel}) berhasil diunduh',
-                          ),
-                          behavior: SnackBarBehavior.floating,
-                        ),
+                      UcapKasToast.showInfo(
+                        context,
+                        headerLabel: 'Laporan PDF Diunduh',
+                        title: '${ws.shortName} · ${activeMonth.fullLabel}',
+                        subtitle: 'Siap dibagikan atau dicetak',
+                        badgeText: 'PDF',
                       );
                     },
                     icon: const Icon(Icons.picture_as_pdf_outlined, size: 16),
