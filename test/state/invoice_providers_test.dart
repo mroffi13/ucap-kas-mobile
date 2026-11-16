@@ -195,12 +195,9 @@ void main() {
         id: 'ws-1',
         name: 'Toko Berkah',
         shortName: 'TB',
-        category: 'Ritel',
-        role: 'Pemilik',
         balance: 0,
-        todayIncome: 0,
-        todayExpense: 0,
-        txCount: 0,
+        monthlyInflow: 0,
+        monthlyOutflow: 0,
       ),
     );
 

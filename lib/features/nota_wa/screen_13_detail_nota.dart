@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -8,6 +9,7 @@ import '../../core/theme/app_theme.dart';
 import '../../core/utils/invoice_pdf_generator.dart';
 import '../../core/utils/native_file_saver.dart';
 import '../../core/utils/rupiah_formatter.dart';
+import '../../core/widgets/ucapkas_logo.dart';
 import '../../core/widgets/ucapkas_toast.dart';
 import '../../data/models/cash_transaction.dart';
 import '../../data/models/nota_invoice.dart';
@@ -39,7 +41,11 @@ class _Screen13DetailNotaState extends ConsumerState<Screen13DetailNota> {
           .replaceAll(' ', '_');
       final filename = '$safeNumber.pdf';
 
-      final isAuth = ref.read(authProvider).isAuthenticated;
+      final authState = ref.read(authProvider);
+      final isAuth = authState.isAuthenticated;
+      final isPro = isAuth
+          ? (ws.isPro || (authState.user?.isPro ?? false))
+          : ws.isPro;
       if (isAuth && ws.id.isNotEmpty && nota.id.isNotEmpty) {
         try {
           pdfBytes = await ref
@@ -52,6 +58,7 @@ class _Screen13DetailNotaState extends ConsumerState<Screen13DetailNota> {
           final generated = InvoicePdfGenerator.generate(
             nota: nota,
             workspace: ws,
+            isProOverride: isPro,
           );
           pdfBytes = generated.bytes;
         }
@@ -59,6 +66,7 @@ class _Screen13DetailNotaState extends ConsumerState<Screen13DetailNota> {
         final generated = InvoicePdfGenerator.generate(
           nota: nota,
           workspace: ws,
+          isProOverride: isPro,
         );
         pdfBytes = generated.bytes;
       }
@@ -335,10 +343,34 @@ class _Screen13DetailNotaState extends ConsumerState<Screen13DetailNota> {
     );
   }
 
+  Uint8List? _decodeLogoBytes(String logoUrl) {
+    var trimmed = logoUrl.trim();
+    if (trimmed.isEmpty) return null;
+    final idx = trimmed.indexOf('base64,');
+    if (idx >= 0) {
+      trimmed = trimmed.substring(idx + 7);
+    }
+    try {
+      return base64Decode(trimmed);
+    } catch (_) {
+      return null;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final nota = ref.watch(selectedNotaProvider);
     final ws = ref.watch(activeWorkspaceProvider);
+    final authState = ref.watch(authProvider);
+    final isPro = authState.isAuthenticated
+        ? (ws.isPro || (authState.user?.isPro ?? false))
+        : ws.isPro;
+    final customLogoBytes = isPro ? _decodeLogoBytes(ws.logoUrl) : null;
+    final shortMark = ws.shortName.trim().isNotEmpty
+        ? (ws.shortName.trim().length > 3
+            ? ws.shortName.trim().substring(0, 3).toUpperCase()
+            : ws.shortName.trim().toUpperCase())
+        : 'UK';
     final isPaid = nota.status == NotaStatus.lunas;
 
     final (Color badgeBg, Color badgeFg, String badgeText) =
@@ -450,11 +482,52 @@ class _Screen13DetailNotaState extends ConsumerState<Screen13DetailNota> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // Invoice Header: Usaha & Status Badge
+                // Invoice Header: Logo (UcapKas on Starter / Custom on Pro), Usaha & Status Badge
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
+                    if (!isPro)
+                      const UcapKasLogo(
+                        size: 38,
+                        showWordmark: false,
+                      )
+                    else if (customLogoBytes != null)
+                      Container(
+                        width: 38,
+                        height: 38,
+                        decoration: BoxDecoration(
+                          color: AppColors.surface,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: AppColors.border),
+                        ),
+                        clipBehavior: Clip.antiAlias,
+                        child: Image.memory(
+                          customLogoBytes,
+                          width: 38,
+                          height: 38,
+                          fit: BoxFit.cover,
+                        ),
+                      )
+                    else
+                      Container(
+                        width: 38,
+                        height: 38,
+                        decoration: BoxDecoration(
+                          color: AppColors.heroDark,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        alignment: Alignment.center,
+                        child: Text(
+                          shortMark,
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w800,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    const SizedBox(width: 11),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -530,14 +603,16 @@ class _Screen13DetailNotaState extends ConsumerState<Screen13DetailNota> {
                               color: AppColors.textPrimary,
                             ),
                           ),
-                          const SizedBox(height: 2),
-                          Text(
-                            nota.clientContact,
-                            style: GoogleFonts.inter(
-                              fontSize: 11.5,
-                              color: AppColors.textSecondary,
+                          if (nota.clientContact.trim().isNotEmpty) ...[
+                            const SizedBox(height: 2),
+                            Text(
+                              nota.clientContact,
+                              style: GoogleFonts.inter(
+                                fontSize: 11.5,
+                                color: AppColors.textSecondary,
+                              ),
                             ),
-                          ),
+                          ],
                         ],
                       ),
                     ),
@@ -654,6 +729,42 @@ class _Screen13DetailNotaState extends ConsumerState<Screen13DetailNota> {
                     ],
                   ),
                 ),
+
+                // Starter / Free Footer Watermark (Omitted on Pro)
+                if (!isPro) ...[
+                  const SizedBox(height: 14),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppColors.surfaceSubtle,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: AppColors.border),
+                    ),
+                    child: Row(
+                      children: [
+                        const UcapKasLogo(
+                          size: 18,
+                          showWordmark: false,
+                        ),
+                        const SizedBox(width: 9),
+                        Expanded(
+                          child: Text(
+                            'Invoice dibuat oleh aplikasi UcapKas, tersedia di Play Store gratis',
+                            style: GoogleFonts.inter(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              height: 1.35,
+                              color: AppColors.textSecondary,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ],
             ),
           ),

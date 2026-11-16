@@ -13,6 +13,10 @@ class MockLedgerData {
       balance: 14850000,
       monthlyInflow: 8400000,
       monthlyOutflow: 3550000,
+      prevMonthlyInflow: 7800000,
+      prevMonthlyOutflow: 3488889,
+      focusType: 'umkm',
+      quickCategories: ['Servis', 'Bahan Baku', 'Operasional'],
     ),
     Workspace(
       id: 'ws-dapur',
@@ -21,6 +25,10 @@ class MockLedgerData {
       balance: 3200000,
       monthlyInflow: 6500000,
       monthlyOutflow: 3300000,
+      prevMonthlyInflow: 6000000,
+      prevMonthlyOutflow: 3100000,
+      focusType: 'rumah_tangga',
+      quickCategories: ['Belanja Dapur', 'Tagihan & Listrik', 'Kebutuhan Anak'],
     ),
   ];
 

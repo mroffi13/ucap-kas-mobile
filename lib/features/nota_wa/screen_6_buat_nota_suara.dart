@@ -121,7 +121,7 @@ class _Screen6BuatNotaSuaraState extends ConsumerState<Screen6BuatNotaSuara> {
       ];
     } else {
       _customerController = TextEditingController(text: 'Pak Reza');
-      _contactController = TextEditingController(text: '0812-8890-3344');
+      _contactController = TextEditingController();
       _dueDateController = TextEditingController(text: '12 November 2026');
       _items = [
         _DraftInvoiceLine(
@@ -231,9 +231,7 @@ class _Screen6BuatNotaSuaraState extends ConsumerState<Screen6BuatNotaSuara> {
     }
 
     final isAuth = ref.read(authProvider).isAuthenticated;
-    final contact = _contactController.text.trim().isEmpty
-        ? 'WA Pelanggan'
-        : _contactController.text.trim();
+    final contact = _contactController.text.trim();
     final due = _dueDateController.text.trim().isEmpty
         ? '7 Hari Lagi'
         : _dueDateController.text.trim();

@@ -53,7 +53,8 @@ void main() {
     await tester.tap(find.byKey(const Key('btn_bicara_mic')));
     await tester.pump();
     expect(find.byKey(const Key('voice_recording_hud')), findsOneWidget);
-    expect(find.text('Mode Klik'), findsOneWidget);
+    expect(find.text('Mode Klik'), findsNothing);
+    expect(find.text('Mendengarkan...'), findsOneWidget);
     expect(find.text('Batal'), findsOneWidget);
     expect(find.text('Selesai'), findsOneWidget);
     expect(bicaraCompleted, isFalse);
@@ -104,7 +105,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
 
     expect(find.byKey(const Key('voice_recording_hud')), findsOneWidget);
-    expect(find.text('Mode Tahan (WA)'), findsOneWidget);
+    expect(find.text('Mode Tahan (WA)'), findsNothing);
     expect(find.text('« Geser untuk batal'), findsOneWidget);
 
     await holdGesture.up();
@@ -119,7 +120,7 @@ void main() {
     // Scenario B: Hold for Push-to-Talk and drag away -> cancels recording on release
     final cancelGesture = await tester.startGesture(micCenter);
     await tester.pump(const Duration(milliseconds: 300));
-    expect(find.text('Mode Tahan (WA)'), findsOneWidget);
+    expect(find.text('Mode Tahan (WA)'), findsNothing);
 
     // Drag left 90px into cancel zone
     await cancelGesture.moveBy(const Offset(-90, 0));
@@ -208,8 +209,8 @@ void main() {
     final catWidget = tester.widget<TextField>(catField);
     expect(catWidget.controller?.text, 'Jasa Turun Mesin');
 
-    // Switch to Invoice Speech ("Buat Invoice (Pak Reza · Rp 900 rb)") -> renders Kirim Invoice view
-    final invoicePill = find.text('Buat Invoice (Pak Reza · Rp 900 rb)');
+    // Switch to Invoice view ("Invoice") -> renders Kirim Invoice view
+    final invoicePill = find.text('Invoice');
     await tester.ensureVisible(invoicePill);
     await tester.tap(invoicePill);
     await tester.pumpAndSettle();

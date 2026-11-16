@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ucapkas_app/app.dart';
 import 'package:ucapkas_app/core/widgets/ucapkas_logo.dart';
+import 'package:ucapkas_app/router/app_router.dart';
 import 'package:ucapkas_app/data/models/auth_user.dart';
 import 'package:ucapkas_app/data/models/cash_transaction.dart';
 import 'package:ucapkas_app/data/models/workspace.dart';
@@ -13,8 +14,10 @@ import 'package:ucapkas_app/state/auth_provider.dart';
 import 'package:ucapkas_app/state/ledger_providers.dart';
 
 class _WidgetTestLedgerRepository implements LedgerRepository {
+  List<Workspace> _workspaces = List<Workspace>.from(MockLedgerData.workspaces);
+
   @override
-  Future<List<Workspace>> listWorkspaces() async => MockLedgerData.workspaces;
+  Future<List<Workspace>> listWorkspaces() async => _workspaces;
 
   @override
   Future<WorkspaceMutationResult> createWorkspace({
@@ -24,10 +27,30 @@ class _WidgetTestLedgerRepository implements LedgerRepository {
     String bankName = '',
     String bankAccountNumber = '',
     String bankAccountHolder = '',
+    String logoUrl = '',
+    List<String> quickCategories = const [],
   }) async {
-    return const WorkspaceMutationResult(
-      workspace: null,
-      workspaces: MockLedgerData.workspaces,
+    final created = Workspace(
+      id: 'ws-${_workspaces.length + 1}',
+      name: name,
+      shortName: shortName,
+      balance: 0,
+      monthlyInflow: 0,
+      monthlyOutflow: 0,
+      focusType: focusType,
+      bankName: bankName,
+      bankAccountNumber: bankAccountNumber,
+      bankAccountHolder: bankAccountHolder,
+      logoUrl: logoUrl,
+      quickCategories: Workspace.normalizeQuickCategories(
+        quickCategories,
+        focusType: focusType,
+      ),
+    );
+    _workspaces = [..._workspaces, created];
+    return WorkspaceMutationResult(
+      workspace: created,
+      workspaces: _workspaces,
     );
   }
 
@@ -40,18 +63,37 @@ class _WidgetTestLedgerRepository implements LedgerRepository {
     String bankName = '',
     String bankAccountNumber = '',
     String bankAccountHolder = '',
+    String logoUrl = '',
+    List<String> quickCategories = const [],
   }) async {
-    return const WorkspaceMutationResult(
-      workspace: null,
-      workspaces: MockLedgerData.workspaces,
+    Workspace? updated;
+    _workspaces = [
+      for (final ws in _workspaces)
+        if (ws.id == workspaceId)
+          updated = ws.copyWith(
+            name: name,
+            shortName: shortName,
+            focusType: focusType,
+            bankName: bankName,
+            bankAccountNumber: bankAccountNumber,
+            bankAccountHolder: bankAccountHolder,
+            logoUrl: logoUrl,
+            quickCategories: quickCategories,
+          )
+        else
+          ws,
+    ];
+    return WorkspaceMutationResult(
+      workspace: updated,
+      workspaces: _workspaces,
     );
   }
 
   @override
   Future<LedgerTransactionsResult> listTransactions(String workspaceId) async {
-    return const LedgerTransactionsResult(
+    return LedgerTransactionsResult(
       transactions: MockLedgerData.initialTransactions,
-      workspaces: MockLedgerData.workspaces,
+      workspaces: _workspaces,
     );
   }
 
@@ -90,6 +132,60 @@ class _WidgetTestLedgerRepository implements LedgerRepository {
     required String transactionId,
   }) async {
     return MockLedgerData.workspaces;
+  }
+
+  @override
+  Future<WorkspaceMembersBundle> listMembers(String workspaceId) async {
+    return const WorkspaceMembersBundle(
+      members: [
+        WorkspaceMemberModel(
+          userId: '01932c00-0000-7000-8000-000000000010',
+          email: 'hendra.jaya@gmail.com',
+          fullName: 'Hendra Jaya',
+          role: 'owner',
+          roleLabel: 'Pemilik',
+          isOwner: true,
+        ),
+      ],
+      maxMembers: 5,
+      viewerRole: 'owner',
+    );
+  }
+
+  @override
+  Future<WorkspaceInviteModel> createInvite(String workspaceId) async {
+    return const WorkspaceInviteModel(
+      token: 'uk-inv-test12345',
+      inviteUrl: 'https://ucapkas.id/join/uk-inv-test12345',
+      deepLink: 'ucapkas://join/uk-inv-test12345',
+      expiresAt: '2026-11-17T20:00:00Z',
+      waShareText: 'Undangan Admin UcapKas: https://ucapkas.id/join/uk-inv-test12345',
+    );
+  }
+
+  @override
+  Future<WorkspaceMutationResult> joinWorkspace(String tokenOrUrl) async {
+    return const WorkspaceMutationResult(
+      workspace: null,
+      workspaces: MockLedgerData.workspaces,
+    );
+  }
+
+  @override
+  Future<WorkspaceMembersBundle> removeMember({
+    required String workspaceId,
+    required String memberUserId,
+  }) async {
+    return listMembers(workspaceId);
+  }
+
+  @override
+  Future<WorkspaceActivityLogsPage> listActivityLogs(
+    String workspaceId, {
+    int limit = 5,
+    int offset = 0,
+  }) async {
+    return const WorkspaceActivityLogsPage();
   }
 }
 
@@ -167,6 +263,10 @@ void main() {
     expect(find.byType(UcapKasLogo), findsOneWidget);
     expect(find.text('Rp 14.850.000'), findsOneWidget);
     expect(find.text('Bicara'), findsOneWidget);
+    expect(find.text('Naik 12,5% dibanding bulan lalu'), findsOneWidget);
+    expect(find.text('Catat Kas'), findsOneWidget);
+    expect(find.text('Buat Nota'), findsOneWidget);
+    expect(find.text('Foto Struk'), findsNothing);
 
     // 3b. Test eye icon balance visibility toggle on Dashboard Hero Card
     await tester.tap(find.byKey(const Key('btn_toggle_balance_visibility')));
@@ -201,11 +301,11 @@ void main() {
 
     final micFinder = find.byKey(const Key('btn_bicara_mic'));
 
-    // 7a. Click Bicara -> starts inline recording on Dashboard (Mode Klik)
+    // 7a. Click Bicara -> starts inline recording on Dashboard
     await tester.tap(micFinder);
     await tester.pump();
     expect(find.byKey(const Key('voice_recording_hud')), findsOneWidget);
-    expect(find.text('Mode Klik'), findsOneWidget);
+    expect(find.text('Mode Klik'), findsNothing);
 
     // Click Batal -> cancels inline recording and stays on Dashboard
     await tester.tap(find.byKey(const Key('btn_voice_cancel')));
@@ -217,7 +317,7 @@ void main() {
     final micCenter = tester.getCenter(micFinder);
     final pttCancelGesture = await tester.startGesture(micCenter);
     await tester.pump(const Duration(milliseconds: 300));
-    expect(find.text('Mode Tahan (WA)'), findsOneWidget);
+    expect(find.text('Mode Tahan (WA)'), findsNothing);
 
     await pttCancelGesture.moveBy(const Offset(-85, 0));
     await tester.pump();
@@ -235,7 +335,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Rincian Catatan Suara'), findsOneWidget);
-    expect(find.text('Push-to-Talk'), findsOneWidget);
+    expect(find.text('Rekaman Suara'), findsOneWidget);
   });
 
   test('CashTransaction.fromJson parses manual (0 items) and itemized (1..N items) payloads', () {
@@ -275,5 +375,111 @@ void main() {
     expect(itemizedTx.amount, -85000);
     expect(itemizedTx.items.length, 2);
     expect(itemizedTx.items.first.subtotal, 50000);
+  });
+
+  test('Workspace.compareMonthlyNet computes dynamic upward, downward, flat, and noPrevData trends', () {
+    const wsUp = Workspace(
+      id: 'ws-1',
+      name: 'Kas 1',
+      shortName: 'Kas 1',
+      balance: 1000000,
+      monthlyInflow: 1500000,
+      monthlyOutflow: 500000, // net 1.000.000
+      prevMonthlyInflow: 1200000,
+      prevMonthlyOutflow: 400000, // prev net 800.000 -> +25%
+    );
+    final upRes = wsUp.compareMonthlyNet(
+      currentInflow: wsUp.monthlyInflow,
+      currentOutflow: wsUp.monthlyOutflow,
+    );
+    expect(upRes.trend, MonthlyTrendType.up);
+    expect(upRes.label, 'Naik 25% dibanding bulan lalu');
+
+    final downRes = wsUp.compareMonthlyNet(
+      currentInflow: 900000,
+      currentOutflow: 500000, // net 400.000 vs 800.000 -> -50%
+    );
+    expect(downRes.trend, MonthlyTrendType.down);
+    expect(downRes.label, 'Turun 50% dibanding bulan lalu');
+
+    const wsNew = Workspace(
+      id: 'ws-new',
+      name: 'Kas Baru',
+      shortName: 'Kas Baru',
+      balance: 0,
+      monthlyInflow: 200000,
+      monthlyOutflow: 0,
+      prevMonthlyInflow: 0,
+      prevMonthlyOutflow: 0,
+    );
+    final newRes = wsNew.compareMonthlyNet(
+      currentInflow: 200000,
+      currentOutflow: 0,
+    );
+    expect(newRes.trend, MonthlyTrendType.noPrevData);
+    expect(newRes.label, 'Bulan pertama pembukuan aktif');
+  });
+
+  testWidgets('Catat Kas removes Biasa dicatat & Lampirkan Foto Struk, and Akun customizes 3 quick categories', (tester) async {
+    tester.view.physicalSize = const Size(1179, 2556);
+    tester.view.devicePixelRatio = 3.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    appRouter.go('/onboarding');
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          authRepositoryProvider.overrideWithValue(_WidgetTestAuthRepository()),
+          ledgerRepositoryProvider.overrideWithValue(_WidgetTestLedgerRepository()),
+        ],
+        child: const UcapKasApp(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Masuk Lewat Google'));
+    await tester.pumpAndSettle();
+
+    // Open Catat Kas from Dashboard
+    await tester.tap(find.text('Catat Kas'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Biasa dicatat:'), findsNothing);
+    expect(find.text('Lampirkan Foto Struk'), findsNothing);
+    expect(find.byKey(const Key('quick_category_chip_0')), findsOneWidget);
+    expect(find.byKey(const Key('quick_category_chip_1')), findsOneWidget);
+    expect(find.byKey(const Key('quick_category_chip_2')), findsOneWidget);
+    expect(find.byKey(const Key('quick_category_chip_3')), findsNothing);
+
+    // Go to Akun and edit the 3 quick categories
+    await tester.tap(find.text('Pilih cepat (3) · Atur di Akun'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Akun & Kas Bersama'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('btn_edit_workspace_ws-bengkel')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Kategori Pilih Cepat (Maks. 3)'), findsOneWidget);
+    await tester.enterText(find.byKey(const Key('input_quick_cat_0')), 'Ganti Oli');
+    await tester.enterText(find.byKey(const Key('input_quick_cat_1')), 'Tune Up');
+    await tester.enterText(find.byKey(const Key('input_quick_cat_2')), 'Onderdil');
+    await tester.pump();
+
+    await tester.tap(find.text('Simpan Pengaturan Kas'));
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(seconds: 3));
+
+    expect(find.text('Kategori Cepat: Ganti Oli · Tune Up · Onderdil'), findsOneWidget);
+
+    // Return to Dashboard -> Catat Kas and verify the 3 new quick categories appear
+    await tester.tap(find.text('Kas'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Catat Kas'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Ganti Oli'), findsWidgets);
+    expect(find.text('Tune Up'), findsOneWidget);
+    expect(find.text('Onderdil'), findsOneWidget);
   });
 }

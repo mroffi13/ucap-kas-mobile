@@ -6,9 +6,8 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../state/ledger_providers.dart';
 import '../theme/app_colors.dart';
+import '../theme/app_theme.dart';
 import '../utils/native_voice_recorder.dart';
-import '../utils/rupiah_formatter.dart';
-import '../utils/slang_parser.dart';
 
 enum UcapKasTab { bukuKas, notaWa, laporan, akun }
 
@@ -364,20 +363,20 @@ class _UcapKasBottomNavBarState extends State<UcapKasBottomNavBar> {
           // Floating Cancelled Feedback Pill
           if (_showCancelledBanner && !isRecording)
             Positioned(
-              bottom: 102,
+              bottom: 100,
               child: Container(
                 key: const Key('voice_cancelled_banner'),
                 padding:
-                    const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
                 decoration: BoxDecoration(
                   color: AppColors.heroDark,
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: AppColors.expenseRose, width: 1.2),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: AppColors.darkBorder),
                   boxShadow: const [
                     BoxShadow(
-                      color: Color(0x260F172A),
-                      blurRadius: 12,
-                      offset: Offset(0, 4),
+                      color: Color(0x1E0B1220),
+                      blurRadius: 14,
+                      offset: Offset(0, 6),
                     ),
                   ],
                 ),
@@ -385,15 +384,15 @@ class _UcapKasBottomNavBarState extends State<UcapKasBottomNavBar> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     const Icon(
-                      Icons.delete_outline_rounded,
-                      size: 15,
+                      Icons.close_rounded,
+                      size: 14,
                       color: AppColors.expenseRoseBright,
                     ),
                     const SizedBox(width: 6),
                     Text(
                       'Rekaman suara dibatalkan',
                       style: GoogleFonts.inter(
-                        fontSize: 11,
+                        fontSize: 11.5,
                         fontWeight: FontWeight.w600,
                         color: Colors.white,
                       ),
@@ -403,36 +402,28 @@ class _UcapKasBottomNavBarState extends State<UcapKasBottomNavBar> {
               ),
             ),
 
-          // Floating Live Recording HUD Card (Directly on Dashboard / Current Screen)
+          // Floating Live Recording HUD Card (Compact Nordic Ledger Voice Strip)
           if (isRecording)
             Positioned(
-              bottom: 102,
-              left: 14,
-              right: 14,
-              child: _buildFloatingRecordingHud(isPtt: isPtt),
+              bottom: 100,
+              left: 16,
+              right: 16,
+              child: _buildFloatingRecordingHud(),
             ),
 
           // Bottom Bar Container (94px at bottom; top 16px left & right is 100% transparent)
           Container(
             height: 94,
-            decoration: BoxDecoration(
-              color: isRecording
-                  ? (_isCancelZone
-                      ? const Color(0xFFFFF1F2)
-                      : AppColors.surface)
-                  : AppColors.surface,
-              borderRadius: const BorderRadius.only(
+            decoration: const BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.only(
                 topLeft: Radius.circular(24),
                 topRight: Radius.circular(24),
               ),
               border: Border(
                 top: BorderSide(
-                  color: isRecording
-                      ? (_isCancelZone
-                          ? AppColors.expenseRose
-                          : AppColors.primaryTeal)
-                      : AppColors.border,
-                  width: isRecording ? 1.5 : 1,
+                  color: AppColors.border,
+                  width: 1,
                 ),
               ),
             ),
@@ -473,7 +464,7 @@ class _UcapKasBottomNavBarState extends State<UcapKasBottomNavBar> {
                   ),
           ),
 
-          // Center Floating 56x56 Mic Button (only center has button; left & right have no overlay)
+          // Center Floating 56x56 Mic Button
           Positioned(
             top: 0,
             child: Transform.translate(
@@ -491,15 +482,15 @@ class _UcapKasBottomNavBarState extends State<UcapKasBottomNavBar> {
                 onPointerUp: _onMicPointerUp,
                 onPointerCancel: _onMicPointerCancel,
                 child: SizedBox(
-                  width: 64,
+                  width: 68,
                   height: 80,
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       AnimatedContainer(
-                        duration: const Duration(milliseconds: 150),
-                        width: isRecording ? 60 : 56,
-                        height: isRecording ? 60 : 56,
+                        duration: const Duration(milliseconds: 160),
+                        width: isRecording ? 58 : 56,
+                        height: isRecording ? 58 : 56,
                         decoration: BoxDecoration(
                           color: _isCancelZone
                               ? AppColors.expenseRose
@@ -508,45 +499,30 @@ class _UcapKasBottomNavBarState extends State<UcapKasBottomNavBar> {
                                   : AppColors.heroDark),
                           shape: BoxShape.circle,
                           border: Border.all(
-                            color: _isCancelZone
-                                ? AppColors.expenseRoseBright
-                                : (isRecording
-                                    ? AppColors.primaryTealBright
-                                    : AppColors.surface),
-                            width: isRecording ? 3.5 : 3.5,
+                            color: AppColors.surface,
+                            width: 3.5,
                           ),
-                          boxShadow: isRecording
-                              ? [
-                                  BoxShadow(
-                                    color: (_isCancelZone
-                                            ? AppColors.expenseRose
-                                            : AppColors.primaryTeal)
-                                        .withValues(alpha: 0.32),
-                                    blurRadius: 16,
-                                    spreadRadius: 1,
-                                  ),
-                                ]
-                              : const [
-                                  BoxShadow(
-                                    color: Color(0x220B1220),
-                                    blurRadius: 14,
-                                    offset: Offset(0, 5),
-                                  ),
-                                ],
+                          boxShadow: const [
+                            BoxShadow(
+                              color: Color(0x220B1220),
+                              blurRadius: 14,
+                              offset: Offset(0, 5),
+                            ),
+                          ],
                         ),
                         child: Icon(
                           _isCancelZone
-                              ? Icons.delete_forever_rounded
+                              ? Icons.delete_outline_rounded
                               : (isRecording
                                   ? (isPtt
                                       ? Icons.mic_rounded
                                       : Icons.stop_rounded)
                                   : Icons.mic_none_rounded),
                           color: Colors.white,
-                          size: 25,
+                          size: 24,
                         ),
                       ),
-                      const SizedBox(height: 6),
+                      const SizedBox(height: 5),
                       Text(
                         _isCancelZone
                             ? 'Batal'
@@ -556,7 +532,7 @@ class _UcapKasBottomNavBarState extends State<UcapKasBottomNavBar> {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: GoogleFonts.inter(
-                          fontSize: 10,
+                          fontSize: 10.5,
                           fontWeight: FontWeight.w600,
                           color: _isCancelZone
                               ? AppColors.expenseRose
@@ -578,7 +554,6 @@ class _UcapKasBottomNavBarState extends State<UcapKasBottomNavBar> {
 
   Widget _buildActiveRecordingBottomRow({required bool isPtt}) {
     if (isPtt) {
-      // WhatsApp-style Push-to-Talk slide-to-cancel bar
       return Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
@@ -586,24 +561,16 @@ class _UcapKasBottomNavBarState extends State<UcapKasBottomNavBar> {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Container(
-                  width: 34,
-                  height: 34,
-                  decoration: BoxDecoration(
-                    color: _isCancelZone
-                        ? AppColors.expenseRose
-                        : AppColors.expenseSoft,
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Icon(
-                    _isCancelZone
-                        ? Icons.delete_forever_rounded
-                        : Icons.delete_outline_rounded,
-                    size: 18,
-                    color: _isCancelZone ? Colors.white : AppColors.expenseRose,
-                  ),
+                Icon(
+                  _isCancelZone
+                      ? Icons.delete_outline_rounded
+                      : Icons.chevron_left_rounded,
+                  size: 18,
+                  color: _isCancelZone
+                      ? AppColors.expenseRose
+                      : AppColors.textMuted,
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: 4),
                 Flexible(
                   child: Text(
                     _isCancelZone
@@ -613,8 +580,8 @@ class _UcapKasBottomNavBarState extends State<UcapKasBottomNavBar> {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: GoogleFonts.inter(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
                       color: _isCancelZone
                           ? AppColors.expenseRose
                           : AppColors.textSecondary,
@@ -624,47 +591,25 @@ class _UcapKasBottomNavBarState extends State<UcapKasBottomNavBar> {
               ],
             ),
           ),
-          const SizedBox(width: 56),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            decoration: BoxDecoration(
-              color: _isCancelZone
-                  ? AppColors.expenseSoft
-                  : AppColors.primaryTealSoft,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 7,
-                  height: 7,
-                  decoration: BoxDecoration(
-                    color: _isCancelZone
-                        ? AppColors.expenseRose
-                        : AppColors.primaryTeal,
-                    shape: BoxShape.circle,
-                  ),
-                ),
-                const SizedBox(width: 5),
-                Text(
-                  _formattedTimer,
-                  style: GoogleFonts.plusJakartaSans(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    color: _isCancelZone
-                        ? AppColors.expenseRose
-                        : AppColors.primaryTeal,
-                  ),
-                ),
-              ],
+          const SizedBox(width: 68),
+          Flexible(
+            child: Text(
+              'Lepas jari untuk simpan',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.right,
+              style: GoogleFonts.inter(
+                fontSize: 11.5,
+                fontWeight: FontWeight.w500,
+                color: AppColors.textMuted,
+              ),
             ),
           ),
         ],
       );
     }
 
-    // Mode Klik (Hands-Free): Batal button on Left, Stop Mic in Center, Selesai button on Right
+    // Mode Klik (Hands-Free): Clean Batal button on Left, Mic in Center, Selesai button on Right
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
@@ -673,30 +618,28 @@ class _UcapKasBottomNavBarState extends State<UcapKasBottomNavBar> {
           onTap: _cancelRecording,
           behavior: HitTestBehavior.opaque,
           child: Container(
-            height: 44,
+            height: 42,
             padding: const EdgeInsets.symmetric(horizontal: 14),
             decoration: BoxDecoration(
-              color: AppColors.expenseSoft,
+              color: AppColors.surfaceSubtle,
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: AppColors.expenseRose.withValues(alpha: 0.3),
-              ),
+              border: Border.all(color: AppColors.border),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
                 const Icon(
-                  Icons.delete_outline_rounded,
-                  size: 16,
-                  color: AppColors.expenseRose,
+                  Icons.close_rounded,
+                  size: 15,
+                  color: AppColors.textSecondary,
                 ),
                 const SizedBox(width: 6),
                 Text(
                   'Batal',
                   style: GoogleFonts.inter(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.expenseRose,
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textSecondary,
                   ),
                 ),
               ],
@@ -709,10 +652,10 @@ class _UcapKasBottomNavBarState extends State<UcapKasBottomNavBar> {
           onTap: _finishAndProcessRecording,
           behavior: HitTestBehavior.opaque,
           child: Container(
-            height: 44,
+            height: 42,
             padding: const EdgeInsets.symmetric(horizontal: 14),
             decoration: BoxDecoration(
-              color: AppColors.primaryTeal,
+              color: AppColors.heroDark,
               borderRadius: BorderRadius.circular(12),
             ),
             child: Row(
@@ -720,15 +663,15 @@ class _UcapKasBottomNavBarState extends State<UcapKasBottomNavBar> {
               children: [
                 const Icon(
                   Icons.check_rounded,
-                  size: 16,
+                  size: 15,
                   color: Colors.white,
                 ),
                 const SizedBox(width: 6),
                 Text(
                   'Selesai',
                   style: GoogleFonts.inter(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
                     color: Colors.white,
                   ),
                 ),
@@ -740,267 +683,139 @@ class _UcapKasBottomNavBarState extends State<UcapKasBottomNavBar> {
     );
   }
 
-  Widget _buildFloatingRecordingHud({required bool isPtt}) {
-    final slangAmount = SlangParser.parseSpokenAmount('ceban tiga') ?? 30000;
+  Widget _buildFloatingRecordingHud() {
+    final hasLiveText = _liveRecognizedText.trim().isNotEmpty;
+    final placeholderPrompt = widget.currentIndex == 1
+        ? 'Contoh: "Tagih Pak Reza 500 ribu tempo minggu depan"'
+        : 'Contoh: "Beli bensin 35 ribu tunai"';
 
     return Container(
       key: const Key('voice_recording_hud'),
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
       decoration: BoxDecoration(
         color: AppColors.heroDark,
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(18),
         border: Border.all(
           color: _isCancelZone
-              ? AppColors.expenseRose
-              : AppColors.primaryTeal,
-          width: 1.5,
+              ? AppColors.expenseRose.withValues(alpha: 0.5)
+              : AppColors.darkBorder,
+          width: 1,
         ),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x330F172A),
-            blurRadius: 20,
-            offset: Offset(0, 8),
-          ),
-        ],
+        boxShadow: AppColors.heroShadow,
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Top Status Row
+          // Row 1: Live Dot + Timer + Status + Minimal Equalizer + Mode Tag
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Flexible(
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                  decoration: BoxDecoration(
+              Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(
+                  color: _isCancelZone
+                      ? AppColors.expenseRoseBright
+                      : AppColors.incomeEmeraldBright,
+                  shape: BoxShape.circle,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                _formattedTimer,
+                style: AppTheme.numStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  _isCancelZone ? 'LEPAS UNTUK BATAL' : 'Mendengarkan...',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.inter(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
                     color: _isCancelZone
-                        ? AppColors.expenseRose.withValues(alpha: 0.2)
-                        : const Color(0xFF132338),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: _isCancelZone
-                          ? AppColors.expenseRoseBright
-                          : AppColors.primaryTeal,
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(
-                        width: 8,
-                        height: 8,
-                        decoration: BoxDecoration(
-                          color: _isCancelZone
-                              ? AppColors.expenseRoseBright
-                              : AppColors.incomeEmeraldBright,
-                          shape: BoxShape.circle,
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                      Flexible(
-                        child: Text(
-                          _isCancelZone
-                              ? 'LEPAS UNTUK BATAL'
-                              : (isPtt
-                                  ? 'PUSH-TO-TALK • $_formattedTimer'
-                                  : 'MENDENGARKAN... $_formattedTimer'),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: GoogleFonts.inter(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w700,
-                            color: _isCancelZone
-                                ? AppColors.expenseRoseBright
-                                : AppColors.incomeEmeraldBright,
-                          ),
-                        ),
-                      ),
-                    ],
+                        ? AppColors.expenseRoseBright
+                        : AppColors.darkTextMuted,
                   ),
                 ),
               ),
               const SizedBox(width: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF1E293B),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  isPtt ? 'Mode Tahan (WA)' : 'Mode Klik',
-                  style: GoogleFonts.inter(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.primaryTealBright,
-                  ),
+              // Compact 7-bar minimal waveform inline
+              SizedBox(
+                height: 18,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: List.generate(7, (i) {
+                    final shiftedIndex =
+                        (i * 2 + _wavePhase) % _baseWaveHeights.length;
+                    final rawH = _baseWaveHeights[shiftedIndex];
+                    final h = _isCancelZone
+                        ? 4.0
+                        : (rawH * 0.65).clamp(4.0, 18.0);
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 1.5),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 140),
+                        width: 2.5,
+                        height: h,
+                        decoration: BoxDecoration(
+                          color: _isCancelZone
+                              ? AppColors.expenseRoseBright
+                              : (i.isEven
+                                  ? AppColors.primaryTealBright
+                                  : AppColors.darkTextMuted),
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                    );
+                  }),
                 ),
               ),
             ],
           ),
           const SizedBox(height: 10),
-
-          // Live Audio Waveform Row
-          SizedBox(
-            height: 28,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: List.generate(_baseWaveHeights.length, (i) {
-                final shiftedIndex =
-                    (i + _wavePhase) % _baseWaveHeights.length;
-                final h = _isCancelZone
-                    ? 6.0
-                    : _baseWaveHeights[shiftedIndex];
-                return Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 3),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 140),
-                    width: 4,
-                    height: h,
-                    decoration: BoxDecoration(
-                      color: _isCancelZone
-                          ? AppColors.expenseRoseBright
-                          : (i.isEven
-                              ? AppColors.primaryTealBright
-                              : const Color(0xFF475569)),
-                      borderRadius: BorderRadius.circular(3),
-                    ),
-                  ),
-                );
-              }),
-            ),
-          ),
+          const Divider(height: 1, color: AppColors.darkBorder),
           const SizedBox(height: 10),
 
-          // Live Transcript Box or Cancel Warning Box
+          // Row 2: Clean single-surface live transcript or natural hint
           if (_isCancelZone)
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: const Color(0xFF3B0D16),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Row(
-                children: [
-                  const Icon(
-                    Icons.delete_forever_rounded,
-                    color: AppColors.expenseRoseBright,
-                    size: 20,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'Lepaskan jari sekarang untuk membatalkan & menghapus rekaman suara.',
-                      style: GoogleFonts.inter(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.white,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            )
-          else
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: AppColors.heroCardSecondary,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Flexible(
-                        child: Text(
-                          'Suara yang sedang ditangkap:',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: GoogleFonts.inter(
-                            fontSize: 10,
-                            color: AppColors.darkTextMuted,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                      Flexible(
-                        child: Text(
-                          'Bahasa Pasar Aktif',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: GoogleFonts.inter(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.primaryTealBright,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    _liveRecognizedText.isNotEmpty
-                        ? '"$_liveRecognizedText"'
-                        : (widget.currentIndex == 1
-                            ? '"${VoiceRecordingSession.sampleInvoiceSpeech}"'
-                            : '"${VoiceRecordingSession.sampleKasSpeech}"'),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
+            Row(
+              children: [
+                const Icon(
+                  Icons.delete_outline_rounded,
+                  color: AppColors.expenseRoseBright,
+                  size: 16,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Lepaskan jari sekarang untuk membatalkan rekaman suara.',
                     style: GoogleFonts.inter(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w500,
                       color: Colors.white,
                     ),
                   ),
-                  const SizedBox(height: 6),
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(
-                        Icons.check_circle_rounded,
-                        size: 13,
-                        color: AppColors.incomeEmeraldBright,
-                      ),
-                      const SizedBox(width: 5),
-                      Flexible(
-                        child: Text(
-                          'Otomatis dikenali: "ceban tiga" = ${RupiahFormatter.format(slangAmount)}',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: GoogleFonts.inter(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.incomeEmeraldBright,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
+                ),
+              ],
+            )
+          else
+            Text(
+              hasLiveText ? '"$_liveRecognizedText"' : placeholderPrompt,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 13.5,
+                fontWeight: hasLiveText ? FontWeight.w600 : FontWeight.w500,
+                height: 1.4,
+                color: hasLiveText ? Colors.white : AppColors.darkTextMuted,
               ),
             ),
-          const SizedBox(height: 8),
-
-          // Helper Footer Hint
-          Text(
-            _isCancelZone
-                ? 'Rekaman tidak akan disimpan'
-                : (isPtt
-                    ? 'Lepas jari untuk selesai, atau geser ke mana saja untuk batal'
-                    : 'Ketuk Selesai untuk lihat rincian, atau ketuk Batal untuk hapus'),
-            textAlign: TextAlign.center,
-            style: GoogleFonts.inter(
-              fontSize: 10,
-              color: _isCancelZone
-                  ? AppColors.expenseRoseBright
-                  : AppColors.darkTextMuted,
-            ),
-          ),
         ],
       ),
     );

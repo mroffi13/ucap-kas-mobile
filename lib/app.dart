@@ -8,7 +8,7 @@ class UcapKasApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp.router(
-      title: 'UcapKas — Tinggal ngomong, kas rapi.',
+      title: 'UcapKas',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light(),
       darkTheme: AppTheme.dark(),

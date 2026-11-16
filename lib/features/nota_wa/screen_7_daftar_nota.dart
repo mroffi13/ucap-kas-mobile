@@ -489,7 +489,9 @@ class Screen7DaftarNota extends ConsumerWidget {
               children: [
                 Expanded(
                   child: Text(
-                    '${nota.dueDateLabel} · ${nota.clientContact}',
+                    nota.clientContact.trim().isEmpty
+                        ? nota.dueDateLabel
+                        : '${nota.dueDateLabel} · ${nota.clientContact}',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: GoogleFonts.inter(

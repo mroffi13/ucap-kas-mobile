@@ -147,6 +147,23 @@ class AuthNotifier extends Notifier<AuthState> {
     state = state.copyWith(workspaces: workspaces, clearError: true);
   }
 
+  Future<void> refreshProfile() async {
+    if (!state.isAuthenticated) return;
+    try {
+      final repo = ref.read(authRepositoryProvider);
+      final bundle = await repo.tryRestoreSession();
+      if (bundle != null) {
+        state = state.copyWith(
+          user: bundle.user,
+          workspaces: bundle.workspaces.isNotEmpty
+              ? bundle.workspaces
+              : state.workspaces,
+          clearError: true,
+        );
+      }
+    } catch (_) {}
+  }
+
   Future<void> signOut() async {
     final repo = ref.read(authRepositoryProvider);
     await repo.signOut();

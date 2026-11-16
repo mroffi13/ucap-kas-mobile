@@ -87,4 +87,31 @@ class NativeFileSaver {
       return false;
     }
   }
+
+  static Future<bool> shareText({
+    required String text,
+    String title = 'Kirim Undangan via WhatsApp',
+  }) async {
+    try {
+      final ok = await _channel.invokeMethod<bool>('sharePdf', {
+        'text': text,
+        'title': title,
+      });
+      return ok ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static Future<String?> pickLogoImage() async {
+    try {
+      final dataUri = await _channel.invokeMethod<String>('pickLogoImage');
+      if (dataUri != null && dataUri.trim().isNotEmpty) {
+        return dataUri.trim();
+      }
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
 }

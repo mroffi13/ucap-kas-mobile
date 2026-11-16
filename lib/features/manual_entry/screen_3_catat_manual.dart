@@ -32,19 +32,6 @@ class _Screen3CatatManualState extends ConsumerState<Screen3CatatManual>
   String _category = 'Servis';
   String _paymentMethod = 'Tunai';
 
-  static const List<(String, String, int)> _quickTemplates = [
-    ('Servis AC', 'Servis AC Mobil Avanza', 450000),
-    ('Ganti Oli', 'Ganti Oli Mesin Beat', 65000),
-    ('Beli Kampas', 'Beli Kampas Rem Depan', 85000),
-  ];
-
-  static const List<(String, IconData)> _categories = [
-    ('Servis', Icons.build_outlined),
-    ('Bahan Baku', Icons.inventory_2_outlined),
-    ('Operasional', Icons.bolt_outlined),
-    ('Lainnya', Icons.grid_view_rounded),
-  ];
-
   static const List<(String, IconData)> _paymentMethods = [
     ('Tunai', Icons.payments_outlined),
     ('QRIS', Icons.qr_code_rounded),
@@ -55,6 +42,10 @@ class _Screen3CatatManualState extends ConsumerState<Screen3CatatManual>
   void initState() {
     super.initState();
     final isAuth = ref.read(authProvider).isAuthenticated;
+    final activeCats = ref.read(activeWorkspaceProvider).quickCategories;
+    if (activeCats.isNotEmpty) {
+      _category = activeCats.first;
+    }
     // 0.0 = Kas Masuk, 1.0 = Kas Keluar — single synchronized 60fps vsync ticker
     _modeController = AnimationController(
       vsync: this,
@@ -116,16 +107,6 @@ class _Screen3CatatManualState extends ConsumerState<Screen3CatatManual>
     final parsed = int.tryParse(cleanDigits) ?? 0;
     setState(() {
       _nominal = parsed;
-    });
-  }
-
-  void _applyTemplate(String fullText, int suggestedNominal) {
-    HapticFeedback.selectionClick();
-    setState(() {
-      _descController.text = fullText;
-      if (_nominal == 0) {
-        _updateNominalValue(suggestedNominal);
-      }
     });
   }
 
@@ -489,30 +470,37 @@ class _Screen3CatatManualState extends ConsumerState<Screen3CatatManual>
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Container(
-                                  width: 8,
-                                  height: 8,
-                                  decoration: BoxDecoration(
-                                    color: accent,
-                                    shape: BoxShape.circle,
+                            Flexible(
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Container(
+                                    width: 8,
+                                    height: 8,
+                                    decoration: BoxDecoration(
+                                      color: accent,
+                                      shape: BoxShape.circle,
+                                    ),
                                   ),
-                                ),
-                                const SizedBox(width: 7),
-                                Text(
-                                  _isKasMasuk
-                                      ? 'Jumlah Uang Masuk'
-                                      : 'Jumlah Uang Keluar',
-                                  style: GoogleFonts.inter(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w600,
-                                    color: AppColors.textSecondary,
+                                  const SizedBox(width: 7),
+                                  Flexible(
+                                    child: Text(
+                                      _isKasMasuk
+                                          ? 'Jumlah Uang Masuk'
+                                          : 'Jumlah Uang Keluar',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: GoogleFonts.inter(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                        color: AppColors.textSecondary,
+                                      ),
+                                    ),
                                   ),
-                                ),
-                              ],
+                                ],
+                              ),
                             ),
+                            const SizedBox(width: 8),
                             GestureDetector(
                               onTap: () => context.push('/bicara'),
                               child: Container(
@@ -680,14 +668,19 @@ class _Screen3CatatManualState extends ConsumerState<Screen3CatatManual>
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Text(
-                            'Untuk keperluan apa?',
-                            style: GoogleFonts.inter(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.textPrimary,
+                          Flexible(
+                            child: Text(
+                              'Untuk keperluan apa?',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: GoogleFonts.inter(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.textPrimary,
+                              ),
                             ),
                           ),
+                          const SizedBox(width: 8),
                           Text(
                             'Hari ini, 14:30',
                             style: GoogleFonts.inter(
@@ -736,31 +729,6 @@ class _Screen3CatatManualState extends ConsumerState<Screen3CatatManual>
                           ),
                         ),
                       ),
-                      const SizedBox(height: 10),
-                      SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        child: Row(
-                          children: [
-                            Text(
-                              'Biasa dicatat:',
-                              style: GoogleFonts.inter(
-                                fontSize: 11,
-                                color: AppColors.textMuted,
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            for (final tpl in _quickTemplates) ...[
-                              _buildTemplatePill(
-                                tpl.$1,
-                                tpl.$2,
-                                tpl.$3,
-                                accent,
-                              ),
-                              const SizedBox(width: 6),
-                            ],
-                          ],
-                        ),
-                      ),
                       const Padding(
                         padding: EdgeInsets.symmetric(vertical: 16),
                         child: Divider(height: 1, color: AppColors.border),
@@ -776,11 +744,20 @@ class _Screen3CatatManualState extends ConsumerState<Screen3CatatManual>
                               color: AppColors.textPrimary,
                             ),
                           ),
-                          Text(
-                            'Pilih atau ketik sendiri',
-                            style: GoogleFonts.inter(
-                              fontSize: 11,
-                              color: AppColors.textMuted,
+                          const SizedBox(width: 8),
+                          Flexible(
+                            child: GestureDetector(
+                              onTap: () => context.go('/akun'),
+                              child: Text(
+                                'Pilih cepat (3) · Atur di Akun',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: GoogleFonts.inter(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppColors.primaryTeal,
+                                ),
+                              ),
                             ),
                           ),
                         ],
@@ -805,7 +782,7 @@ class _Screen3CatatManualState extends ConsumerState<Screen3CatatManual>
                             size: 17,
                             color: accent,
                           ),
-                          hintText: 'Ketik kategori (misal: Servis, Gaji, Listrik)',
+                          hintText: 'Ketik kategori atau pilih 3 di bawah',
                           hintStyle: GoogleFonts.inter(
                             fontSize: 12.5,
                             color: AppColors.textMuted,
@@ -832,71 +809,85 @@ class _Screen3CatatManualState extends ConsumerState<Screen3CatatManual>
                         ),
                       ),
                       const SizedBox(height: 8),
-                      GridView.count(
-                        crossAxisCount: 2,
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        mainAxisSpacing: 8,
-                        crossAxisSpacing: 8,
-                        childAspectRatio: 3.3,
-                        children: _categories.map((cat) {
-                          final selected =
-                              _category.toLowerCase() == cat.$1.toLowerCase();
-                          return GestureDetector(
-                            onTap: () {
-                              HapticFeedback.selectionClick();
-                              setState(() {
-                                _category = cat.$1;
-                                _categoryController.value = TextEditingValue(
-                                  text: cat.$1,
-                                  selection: TextSelection.collapsed(
-                                    offset: cat.$1.length,
+                      Builder(
+                        builder: (_) {
+                          final quickCats =
+                              ws.quickCategories.take(3).toList();
+                          return Row(
+                            children: [
+                              for (int i = 0; i < quickCats.length; i++) ...[
+                                if (i > 0) const SizedBox(width: 8),
+                                Expanded(
+                                  child: Builder(
+                                    builder: (_) {
+                                      final catLabel = quickCats[i];
+                                      final selected =
+                                          _category.toLowerCase() ==
+                                              catLabel.toLowerCase();
+                                      return GestureDetector(
+                                        key: ValueKey(
+                                          'quick_category_chip_$i',
+                                        ),
+                                        onTap: () {
+                                          HapticFeedback.selectionClick();
+                                          setState(() {
+                                            _category = catLabel;
+                                            _categoryController.value =
+                                                TextEditingValue(
+                                              text: catLabel,
+                                              selection:
+                                                  TextSelection.collapsed(
+                                                offset: catLabel.length,
+                                              ),
+                                            );
+                                          });
+                                        },
+                                        child: AnimatedContainer(
+                                          duration:
+                                              const Duration(milliseconds: 180),
+                                          curve: Curves.easeOutCubic,
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 10,
+                                            vertical: 10,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: selected
+                                                ? AppColors.heroDark
+                                                : AppColors.background,
+                                            borderRadius:
+                                                BorderRadius.circular(11),
+                                            border: Border.all(
+                                              color: selected
+                                                  ? AppColors.heroDark
+                                                  : AppColors.border,
+                                            ),
+                                          ),
+                                          child: Center(
+                                            child: Text(
+                                              catLabel,
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              textAlign: TextAlign.center,
+                                              style: GoogleFonts.inter(
+                                                fontSize: 11.5,
+                                                fontWeight: selected
+                                                    ? FontWeight.w600
+                                                    : FontWeight.w500,
+                                                color: selected
+                                                    ? Colors.white
+                                                    : AppColors.textSecondary,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      );
+                                    },
                                   ),
-                                );
-                              });
-                            },
-                            child: AnimatedContainer(
-                              duration: const Duration(milliseconds: 180),
-                              curve: Curves.easeOutCubic,
-                              padding:
-                                  const EdgeInsets.symmetric(horizontal: 12),
-                              decoration: BoxDecoration(
-                                color: selected
-                                    ? AppColors.heroDark
-                                    : AppColors.background,
-                                borderRadius: BorderRadius.circular(11),
-                              ),
-                              child: Row(
-                                children: [
-                                  Icon(
-                                    cat.$2,
-                                    size: 15,
-                                    color: selected
-                                        ? Colors.white
-                                        : AppColors.textMuted,
-                                  ),
-                                  const SizedBox(width: 7),
-                                  Flexible(
-                                    child: Text(
-                                      cat.$1,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: GoogleFonts.inter(
-                                        fontSize: 12,
-                                        fontWeight: selected
-                                            ? FontWeight.w600
-                                            : FontWeight.w500,
-                                        color: selected
-                                            ? Colors.white
-                                            : AppColors.textSecondary,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
+                                ),
+                              ],
+                            ],
                           );
-                        }).toList(),
+                        },
                       ),
                       const SizedBox(height: 16),
                       Text(
@@ -931,71 +922,6 @@ class _Screen3CatatManualState extends ConsumerState<Screen3CatatManual>
                             ),
                           ],
                         ],
-                      ),
-                      const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 16),
-                        child: Divider(height: 1, color: AppColors.border),
-                      ),
-                      // Optional Receipt Attachment Row (No customer/WA clutter)
-                      InkWell(
-                        onTap: () => context.push('/foto-struk'),
-                        borderRadius: BorderRadius.circular(12),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 10,
-                          ),
-                          decoration: BoxDecoration(
-                            color: AppColors.background,
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Row(
-                            children: [
-                              Container(
-                                width: 34,
-                                height: 34,
-                                decoration: BoxDecoration(
-                                  color: AppColors.surface,
-                                  borderRadius: BorderRadius.circular(9),
-                                  border: Border.all(color: AppColors.border),
-                                ),
-                                child: const Icon(
-                                  Icons.camera_alt_outlined,
-                                  size: 16,
-                                  color: AppColors.textSecondary,
-                                ),
-                              ),
-                              const SizedBox(width: 11),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      'Lampirkan Foto Struk',
-                                      style: GoogleFonts.inter(
-                                        fontSize: 12.5,
-                                        fontWeight: FontWeight.w600,
-                                        color: AppColors.textPrimary,
-                                      ),
-                                    ),
-                                    Text(
-                                      'Opsional · Simpan foto nota belanja atau kuitansi',
-                                      style: GoogleFonts.inter(
-                                        fontSize: 11,
-                                        color: AppColors.textMuted,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              const Icon(
-                                Icons.chevron_right_rounded,
-                                size: 18,
-                                color: AppColors.textMuted,
-                              ),
-                            ],
-                          ),
-                        ),
                       ),
                     ],
                   ),
@@ -1103,36 +1029,6 @@ class _Screen3CatatManualState extends ConsumerState<Screen3CatatManual>
             fontSize: 11.5,
             fontWeight: FontWeight.w600,
             color: isHighlighted ? activeColor : AppColors.textPrimary,
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildTemplatePill(
-    String shortLabel,
-    String fullText,
-    int suggestedNominal,
-    Color accent,
-  ) {
-    final isCurrent = _descController.text == fullText;
-    return GestureDetector(
-      onTap: () => _applyTemplate(fullText, suggestedNominal),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 160),
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-        decoration: BoxDecoration(
-          color: isCurrent
-              ? accent.withValues(alpha: 0.12)
-              : AppColors.background,
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Text(
-          shortLabel,
-          style: GoogleFonts.inter(
-            fontSize: 11,
-            fontWeight: isCurrent ? FontWeight.w600 : FontWeight.w500,
-            color: isCurrent ? accent : AppColors.textSecondary,
           ),
         ),
       ),

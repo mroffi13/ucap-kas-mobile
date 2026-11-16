@@ -4,22 +4,50 @@ import '../models/cash_transaction.dart';
 class AiQuotaStatus {
   final int used;
   final int limit;
+  final int weeklyUsed;
+  final int weeklyLimit;
+  final int monthlyUsed;
+  final int monthlyLimit;
   final bool isUnlimited;
   final String subscriptionTier;
+  final String ownerId;
 
   const AiQuotaStatus({
     this.used = 0,
     this.limit = 15,
+    this.weeklyUsed = 0,
+    this.weeklyLimit = 4,
+    this.monthlyUsed = 0,
+    this.monthlyLimit = 15,
     this.isUnlimited = false,
     this.subscriptionTier = 'starter',
+    this.ownerId = '',
   });
 
+  int get weeklyRemaining =>
+      (weeklyLimit - weeklyUsed).clamp(0, weeklyLimit);
+
+  int get monthlyRemaining =>
+      (monthlyLimit - monthlyUsed).clamp(0, monthlyLimit);
+
+  String get summaryLabel {
+    if (isUnlimited) return 'Tanpa Batas';
+    return 'Minggu ini $weeklyUsed/$weeklyLimit · Bulan ini $monthlyUsed/$monthlyLimit';
+  }
+
   factory AiQuotaStatus.fromJson(Map<String, dynamic> json) {
+    final used = (json['used'] as num?)?.toInt() ?? 0;
+    final limit = (json['limit'] as num?)?.toInt() ?? 15;
     return AiQuotaStatus(
-      used: (json['used'] as num?)?.toInt() ?? 0,
-      limit: (json['limit'] as num?)?.toInt() ?? 15,
+      used: used,
+      limit: limit,
+      weeklyUsed: (json['weekly_used'] as num?)?.toInt() ?? used.clamp(0, 4),
+      weeklyLimit: (json['weekly_limit'] as num?)?.toInt() ?? 4,
+      monthlyUsed: (json['monthly_used'] as num?)?.toInt() ?? used,
+      monthlyLimit: (json['monthly_limit'] as num?)?.toInt() ?? limit,
       isUnlimited: json['is_unlimited'] as bool? ?? false,
       subscriptionTier: json['subscription_tier'] as String? ?? 'starter',
+      ownerId: json['owner_id'] as String? ?? '',
     );
   }
 }

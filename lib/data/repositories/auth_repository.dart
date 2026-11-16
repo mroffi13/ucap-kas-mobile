@@ -108,6 +108,7 @@ class RemoteAuthRepository implements AuthRepository {
     required String selectedFocus,
   }) async {
     String? idToken;
+    String? photoUrl;
 
     const useDevMockGoogle = bool.fromEnvironment('USE_DEV_MOCK_GOOGLE');
     if (kDebugMode && useDevMockGoogle) {
@@ -117,6 +118,7 @@ class RemoteAuthRepository implements AuthRepository {
       if (account == null) {
         throw const AuthCancelledException();
       }
+      photoUrl = account.photoUrl;
       final auth = await account.authentication;
       idToken = auth.idToken;
       if (idToken == null || idToken.isEmpty) {
@@ -135,6 +137,7 @@ class RemoteAuthRepository implements AuthRepository {
         'id_token': idToken,
         'selected_focus': selectedFocus,
         'device_name': defaultTargetPlatform.name,
+        if (photoUrl != null && photoUrl.isNotEmpty) 'avatar_url': photoUrl,
       },
     );
 

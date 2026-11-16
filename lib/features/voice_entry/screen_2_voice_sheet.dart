@@ -8,11 +8,11 @@ import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/native_voice_recorder.dart';
 import '../../core/utils/rupiah_formatter.dart';
-import '../../core/utils/slang_parser.dart';
 import '../../core/widgets/ucapkas_toast.dart';
 import '../../core/widgets/workspace_pill.dart';
 import '../../data/models/cash_transaction.dart';
 import '../../data/models/nota_invoice.dart';
+import '../../data/repositories/ai_repository.dart';
 import '../../state/auth_provider.dart';
 import '../../state/ledger_providers.dart';
 
@@ -139,25 +139,32 @@ class _Screen2VoiceSheetState extends ConsumerState<Screen2VoiceSheet>
     _categoryController = TextEditingController(text: 'Servis');
 
     _invoiceCustomerController = TextEditingController(text: 'Pak Reza');
-    _invoiceContactController =
-        TextEditingController(text: '0812-8890-3344');
+    _invoiceContactController = TextEditingController();
     _invoiceDueDateController =
         TextEditingController(text: '12 November 2026');
     _invoiceNotesController = TextEditingController(
       text: 'Pembelian kursi kerja 3 buah & meja 3 buah',
     );
 
+    _resetDefaultKasItems();
+    _resetDefaultInvoiceItems();
+    if (session.transcript.isNotEmpty) {
+      _detectAndApplySpeech(session.transcript, resetItems: false);
+    }
+
     final hasVoiceInput =
         session.audioBase64.isNotEmpty || session.transcript.isNotEmpty;
     final isAuth = ref.read(authProvider).isAuthenticated;
 
     if (hasVoiceInput && isAuth) {
-      _isParsingAi = true;
+      _isParsingAi = session.audioBase64.isNotEmpty;
       _aiPipelineStatus = session.audioBase64.isNotEmpty
           ? 'Mengubah suara menjadi teks (STT) & menyusun transaksi...'
           : 'Menyusun transaksi otomatis dari ucapanmu...';
-      _kasNoteController.clear();
-      _invoiceNotesController.clear();
+      if (session.audioBase64.isNotEmpty) {
+        _kasNoteController.clear();
+        _invoiceNotesController.clear();
+      }
       Future.microtask(() {
         if (mounted) {
           _parseTranscriptWithBackendAI(
@@ -167,12 +174,21 @@ class _Screen2VoiceSheetState extends ConsumerState<Screen2VoiceSheet>
           );
         }
       });
-    } else {
-      _resetDefaultKasItems();
-      _resetDefaultInvoiceItems();
-      if (session.transcript.isNotEmpty) {
-        _detectAndApplySpeech(session.transcript, resetItems: false);
-      }
+    } else if (session.transcript.isNotEmpty) {
+      Future.microtask(() {
+        if (!mounted) return;
+        final cur = ref.read(aiQuotaProvider);
+        ref.read(aiQuotaProvider.notifier).state = AiQuotaStatus(
+          used: (cur.used + 1).clamp(0, cur.limit),
+          limit: cur.limit,
+          weeklyUsed: (cur.weeklyUsed + 1).clamp(0, cur.weeklyLimit),
+          weeklyLimit: cur.weeklyLimit,
+          monthlyUsed: (cur.monthlyUsed + 1).clamp(0, cur.monthlyLimit),
+          monthlyLimit: cur.monthlyLimit,
+          isUnlimited: cur.isUnlimited,
+          subscriptionTier: cur.subscriptionTier,
+        );
+      });
     }
   }
 
@@ -371,12 +387,29 @@ class _Screen2VoiceSheetState extends ConsumerState<Screen2VoiceSheet>
     final isAuth = ref.read(authProvider).isAuthenticated;
     if (!isAuth) {
       _detectAndApplySpeech(text, resetItems: false);
+      final cur = ref.read(aiQuotaProvider);
+      final nextQuota = AiQuotaStatus(
+        used: (cur.used + 1).clamp(0, cur.limit),
+        limit: cur.limit,
+        weeklyUsed: (cur.weeklyUsed + 1).clamp(0, cur.weeklyLimit),
+        weeklyLimit: cur.weeklyLimit,
+        monthlyUsed: (cur.monthlyUsed + 1).clamp(0, cur.monthlyLimit),
+        monthlyLimit: cur.monthlyLimit,
+        isUnlimited: cur.isUnlimited,
+        subscriptionTier: cur.subscriptionTier,
+      );
+      ref.read(aiQuotaProvider.notifier).state = nextQuota;
+      setState(() {
+        _aiPipelineStatus =
+            'Transkrip diproses · Kuota AI ${nextQuota.weeklyUsed}/${nextQuota.weeklyLimit} mgg (${nextQuota.monthlyUsed}/${nextQuota.monthlyLimit} bln)';
+      });
       if (showToast && mounted) {
         UcapKasToast.showInfo(
           context,
           headerLabel: 'Mode Pratinjau',
           title: 'Transkrip Diproses Lokal',
-          subtitle: 'Masuk dengan Google untuk ekstraksi Whisper & AI penuh.',
+          subtitle:
+              'Kuota AI: ${nextQuota.weeklyUsed}/${nextQuota.weeklyLimit} minggu ini · ${nextQuota.monthlyUsed}/${nextQuota.monthlyLimit} bulan ini',
         );
       }
       return;
@@ -406,12 +439,16 @@ class _Screen2VoiceSheetState extends ConsumerState<Screen2VoiceSheet>
       setState(() {
         final providerLabel = switch (result.provider) {
           '9router_gateway' => '9Router STT + LLM',
+          'bifrost_gateway' => 'Bifrost AI Gateway',
           'groq_whisper_llama' => 'Groq Whisper + Llama',
           'gemini_flash' => 'Gemini AI',
           _ => 'NLP Bahasa Pasar',
         };
+        final quotaLabel = result.quota.isUnlimited
+            ? 'Tanpa Batas'
+            : 'Kuota ${result.quota.weeklyUsed}/${result.quota.weeklyLimit} mgg · ${result.quota.monthlyUsed}/${result.quota.monthlyLimit} bln';
         _aiPipelineStatus =
-            'Auto-fill selesai via $providerLabel · Total ${RupiahFormatter.format(result.totalAmount)}';
+            'Auto-fill selesai via $providerLabel · $quotaLabel';
 
         if (result.transcript.isNotEmpty) {
           _transcriptController.value = TextEditingValue(
@@ -425,9 +462,7 @@ class _Screen2VoiceSheetState extends ConsumerState<Screen2VoiceSheet>
           if (result.customerName.isNotEmpty) {
             _invoiceCustomerController.text = result.customerName;
           }
-          if (result.customerContact.isNotEmpty) {
-            _invoiceContactController.text = result.customerContact;
-          }
+          _invoiceContactController.text = result.customerContact.trim();
           if (result.dueDate.isNotEmpty) {
             _invoiceDueDateController.text = result.dueDate;
           }
@@ -495,7 +530,7 @@ class _Screen2VoiceSheetState extends ConsumerState<Screen2VoiceSheet>
           title: '${result.items.length} rincian berhasil diekstrak',
           subtitle: result.quota.isUnlimited
               ? 'Paket Pro • AI Tanpa Batas'
-              : 'Kuota AI bulan ini: ${result.quota.used}/${result.quota.limit}',
+              : 'Kuota AI: ${result.quota.weeklyUsed}/${result.quota.weeklyLimit} minggu ini · ${result.quota.monthlyUsed}/${result.quota.monthlyLimit} bulan ini',
           badgeText: RupiahFormatter.format(result.totalAmount),
         );
       }
@@ -658,9 +693,7 @@ class _Screen2VoiceSheetState extends ConsumerState<Screen2VoiceSheet>
     final customer = _invoiceCustomerController.text.trim().isEmpty
         ? 'Pelanggan'
         : _invoiceCustomerController.text.trim();
-    final contact = _invoiceContactController.text.trim().isEmpty
-        ? 'WA Pelanggan'
-        : 'WA: ${_invoiceContactController.text.trim()}';
+    final contact = _invoiceContactController.text.trim();
     final dueDate = _invoiceDueDateController.text.trim().isEmpty
         ? '7 Hari Lagi'
         : _invoiceDueDateController.text.trim();
@@ -722,7 +755,6 @@ class _Screen2VoiceSheetState extends ConsumerState<Screen2VoiceSheet>
     });
     final formattedDuration =
         '00:${voiceSession.durationSeconds.toString().padLeft(2, '0')}';
-    final slangAmount = SlangParser.parseSpokenAmount('ceban tiga') ?? 30000;
 
     return AnimatedBuilder(
       animation: _modeAnim,
@@ -781,7 +813,7 @@ class _Screen2VoiceSheetState extends ConsumerState<Screen2VoiceSheet>
               ),
             ],
           ),
-          body: _isParsingAi
+          body: (_isParsingAi && voiceSession.audioBase64.isNotEmpty)
               ? _buildAiLoadingBody(activeAccent)
               : SingleChildScrollView(
                   padding: const EdgeInsets.fromLTRB(18, 6, 18, 32),
@@ -791,8 +823,6 @@ class _Screen2VoiceSheetState extends ConsumerState<Screen2VoiceSheet>
                       // 1. Free-Text Speech Box + Intent Switcher (Buku Kas vs Kirim Invoice)
                       _buildVoiceSpeechCard(
                         formattedDuration: formattedDuration,
-                        isPushToTalk: voiceSession.isPushToTalk,
-                        slangAmount: slangAmount,
                         accent: activeAccent,
                       ),
                       const SizedBox(height: 14),
@@ -811,7 +841,7 @@ class _Screen2VoiceSheetState extends ConsumerState<Screen2VoiceSheet>
                     ],
                   ),
                 ),
-          bottomNavigationBar: _isParsingAi
+          bottomNavigationBar: (_isParsingAi && voiceSession.audioBase64.isNotEmpty)
               ? null
               : SafeArea(
             child: Container(
@@ -1055,8 +1085,6 @@ class _Screen2VoiceSheetState extends ConsumerState<Screen2VoiceSheet>
   /// Top strip: Quiet editorial transcript quote + intent switcher
   Widget _buildVoiceSpeechCard({
     required String formattedDuration,
-    required bool isPushToTalk,
-    required int slangAmount,
     required Color accent,
   }) {
     final isInvoice = _intentType == VoiceIntentType.kirimInvoice;
@@ -1071,7 +1099,7 @@ class _Screen2VoiceSheetState extends ConsumerState<Screen2VoiceSheet>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header: Duration/Capture mode + Intent Switcher
+          // Header: Duration + Intent Switcher
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -1092,18 +1120,32 @@ class _Screen2VoiceSheetState extends ConsumerState<Screen2VoiceSheet>
                       ),
                     ),
                     const SizedBox(width: 8),
-                    Flexible(
-                      child: Text(
-                        isPushToTalk
-                            ? '$formattedDuration · Push-to-Talk'
-                            : 'Rekam · $formattedDuration',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: GoogleFonts.inter(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.textSecondary,
-                        ),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            'Rekaman Suara',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: GoogleFonts.inter(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.textPrimary,
+                            ),
+                          ),
+                          Text(
+                            'Durasi $formattedDuration',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: AppTheme.numStyle(
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w500,
+                              color: AppColors.textMuted,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ],

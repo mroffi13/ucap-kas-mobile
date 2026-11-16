@@ -1,19 +1,26 @@
 package id.ucapkas.ucapkas_app
 
 import android.Manifest
+import android.app.Activity
 import android.content.ContentValues
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.Color
 import android.media.MediaRecorder
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
+import android.util.Base64
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
 
@@ -21,9 +28,11 @@ class MainActivity : FlutterActivity() {
     private val channelName = "id.ucapkas.app/audio_recorder"
     private val fileSaverChannelName = "id.ucapkas.app/file_saver"
     private val micPermRequestCode = 9012
+    private val logoPickRequestCode = 9015
     private var mediaRecorder: MediaRecorder? = null
     private var currentOutputPath: String? = null
     private var pendingPermResult: MethodChannel.Result? = null
+    private var pendingLogoResult: MethodChannel.Result? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -202,9 +211,66 @@ class MainActivity : FlutterActivity() {
                             result.success(false)
                         }
                     }
+                    "pickLogoImage" -> {
+                        try {
+                            pendingLogoResult = result
+                            val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
+                                type = "image/*"
+                                addCategory(Intent.CATEGORY_OPENABLE)
+                            }
+                            @Suppress("DEPRECATION")
+                            startActivityForResult(
+                                Intent.createChooser(intent, "Pilih Logo Usaha"),
+                                logoPickRequestCode
+                            )
+                        } catch (_: Exception) {
+                            pendingLogoResult = null
+                            result.success(null)
+                        }
+                    }
                     else -> result.notImplemented()
                 }
             }
+    }
+
+    @Suppress("DEPRECATION")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == logoPickRequestCode) {
+            val cb = pendingLogoResult
+            pendingLogoResult = null
+            if (cb == null) return
+            if (resultCode != Activity.RESULT_OK || data?.data == null) {
+                cb.success(null)
+                return
+            }
+            try {
+                val uri = data.data!!
+                val rawBitmap = contentResolver.openInputStream(uri)?.use { stream ->
+                    BitmapFactory.decodeStream(stream)
+                }
+                if (rawBitmap == null) {
+                    cb.success(null)
+                    return
+                }
+                val side = minOf(rawBitmap.width, rawBitmap.height)
+                val xOff = (rawBitmap.width - side) / 2
+                val yOff = (rawBitmap.height - side) / 2
+                val cropped = Bitmap.createBitmap(rawBitmap, xOff, yOff, side, side)
+                val scaled = Bitmap.createScaledBitmap(cropped, 120, 120, true)
+                val whiteBg = Bitmap.createBitmap(120, 120, Bitmap.Config.ARGB_8888)
+                val canvas = Canvas(whiteBg)
+                canvas.drawColor(Color.WHITE)
+                canvas.drawBitmap(scaled, 0f, 0f, null)
+
+                val baos = ByteArrayOutputStream()
+                whiteBg.compress(Bitmap.CompressFormat.JPEG, 86, baos)
+                val b64 = Base64.encodeToString(baos.toByteArray(), Base64.NO_WRAP)
+                cb.success("data:image/jpeg;base64,$b64")
+            } catch (_: Exception) {
+                cb.success(null)
+            }
+        }
     }
 
     override fun onRequestPermissionsResult(

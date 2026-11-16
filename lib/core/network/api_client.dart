@@ -48,19 +48,19 @@ class ApiClient {
   static String defaultBaseUrl() {
     const envUrl = String.fromEnvironment('API_BASE_URL');
     if (envUrl.isNotEmpty) return envUrl;
-    return 'http://192.168.1.8:8080';
+    return 'http://127.0.0.1:8080';
   }
 
   static List<String> _defaultCandidateUrls(String primary) {
     const envUrl = String.fromEnvironment('API_BASE_URL');
     if (envUrl.isNotEmpty) return [envUrl];
     if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
-      // 1. 192.168.1.8:8080 (works on physical phone via local Wi-Fi LAN without USB)
-      // 2. 127.0.0.1:8080 (works on physical phone via `adb reverse tcp:8080 tcp:8080`)
-      // 3. 10.0.2.2:8080 (works on Android Emulator)
+      // 1. 127.0.0.1:8080 (prioritas utama via USB `adb reverse tcp:8080 tcp:8080`)
+      // 2. 192.168.1.9:8080 (fallback otomatis ke IP Wi-Fi Mac saat ini jika adb reverse belum aktif)
+      // 3. 10.0.2.2:8080 (fallback untuk Android Emulator)
       return const [
-        'http://192.168.1.8:8080',
         'http://127.0.0.1:8080',
+        'http://192.168.1.9:8080',
         'http://10.0.2.2:8080',
       ];
     }

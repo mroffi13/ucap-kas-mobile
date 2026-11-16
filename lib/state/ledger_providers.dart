@@ -57,12 +57,16 @@ final parsedReceiptDraftProvider = StateProvider<ReceiptAiResult>(
   ),
 );
 
+final previewWorkspacesProvider = StateProvider<List<Workspace>>(
+  (ref) => MockLedgerData.workspaces,
+);
+
 final workspacesProvider = Provider<List<Workspace>>((ref) {
   final authState = ref.watch(authProvider);
   if (authState.isAuthenticated && authState.workspaces.isNotEmpty) {
     return authState.workspaces;
   }
-  return MockLedgerData.workspaces;
+  return ref.watch(previewWorkspacesProvider);
 });
 
 final activeWorkspaceIndexProvider = StateProvider<int>((ref) => 0);
@@ -107,6 +111,10 @@ class TransactionsNotifier extends Notifier<List<CashTransaction>> {
       if (res.workspaces.isNotEmpty) {
         ref.read(authProvider.notifier).updateWorkspaces(res.workspaces);
       }
+      try {
+        final quota = await ref.read(aiRepositoryProvider).getQuota(targetWsId);
+        ref.read(aiQuotaProvider.notifier).state = quota;
+      } catch (_) {}
     } catch (e) {
       debugPrint('[UcapKas Ledger] Failed to load transactions: $e');
     }
@@ -227,6 +235,10 @@ class NotaListNotifier extends Notifier<List<NotaInvoice>> {
       if (res.workspaces.isNotEmpty) {
         ref.read(authProvider.notifier).updateWorkspaces(res.workspaces);
       }
+      try {
+        final quota = await ref.read(aiRepositoryProvider).getQuota(targetWsId);
+        ref.read(aiQuotaProvider.notifier).state = quota;
+      } catch (_) {}
     } catch (e) {
       debugPrint('[UcapKas Invoice] Failed to load invoices: $e');
     }

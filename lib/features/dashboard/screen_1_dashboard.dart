@@ -11,6 +11,7 @@ import '../../core/widgets/ucapkas_bottom_nav.dart';
 import '../../core/widgets/ucapkas_logo.dart';
 import '../../core/widgets/workspace_pill.dart';
 import '../../data/models/cash_transaction.dart';
+import '../../data/models/workspace.dart';
 import '../../state/auth_provider.dart';
 import '../../state/ledger_providers.dart';
 
@@ -22,6 +23,10 @@ class Screen1Dashboard extends ConsumerWidget {
     final isAuthenticated = ref.watch(
       authProvider.select((s) => s.isAuthenticated),
     );
+    final isProUser = ref.watch(
+      authProvider.select((s) => s.user?.isPro ?? false),
+    );
+    final aiQuota = ref.watch(aiQuotaProvider);
     final workspace = ref.watch(activeWorkspaceProvider);
     final allTransactions = ref.watch(transactionsProvider);
     final transactions = allTransactions.take(4).toList();
@@ -50,6 +55,29 @@ class Screen1Dashboard extends ConsumerWidget {
         ? workspace.monthlyOutflow
         : workspace.monthlyOutflow + extraOutflow;
     final todayNetDelta = liveInflowDelta - liveOutflowDelta;
+    final monthlyComparison = workspace.compareMonthlyNet(
+      currentInflow: currentMonthlyInflow,
+      currentOutflow: currentMonthlyOutflow,
+    );
+    final (IconData trendIcon, Color trendColor) =
+        switch (monthlyComparison.trend) {
+      MonthlyTrendType.up => (
+          Icons.trending_up_rounded,
+          AppColors.incomeEmeraldBright,
+        ),
+      MonthlyTrendType.down => (
+          Icons.trending_down_rounded,
+          AppColors.expenseRoseBright,
+        ),
+      MonthlyTrendType.flat => (
+          Icons.trending_flat_rounded,
+          AppColors.darkTextMuted,
+        ),
+      MonthlyTrendType.noPrevData => (
+          Icons.insights_rounded,
+          AppColors.primaryTealBright,
+        ),
+    };
 
     return Scaffold(
       extendBody: true,
@@ -222,21 +250,22 @@ class Screen1Dashboard extends ConsumerWidget {
                     const SizedBox(height: 8),
                     Row(
                       children: [
-                        const Icon(
-                          Icons.trending_up_rounded,
+                        Icon(
+                          trendIcon,
                           size: 15,
-                          color: AppColors.incomeEmeraldBright,
+                          color: trendColor,
                         ),
                         const SizedBox(width: 5),
                         Flexible(
                           child: Text(
-                            'Naik 12,5% dibanding bulan lalu',
+                            monthlyComparison.label,
+                            key: const Key('dashboard_monthly_comparison_text'),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: GoogleFonts.inter(
                               fontSize: 11.5,
                               fontWeight: FontWeight.w500,
-                              color: AppColors.incomeEmeraldBright,
+                              color: trendColor,
                             ),
                           ),
                         ),
@@ -362,7 +391,7 @@ class Screen1Dashboard extends ConsumerWidget {
                                   const SizedBox(width: 8),
                                   Flexible(
                                     child: Text(
-                                      'Catat Suara & Foto Struk Aktif',
+                                      'Catat Suara AI & Nota WA Aktif',
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
                                       style: GoogleFonts.inter(
@@ -377,7 +406,11 @@ class Screen1Dashboard extends ConsumerWidget {
                             ),
                             const SizedBox(width: 8),
                             Text(
-                              'Tanpa Batas',
+                              isProUser ||
+                                      aiQuota.isUnlimited ||
+                                      (!isAuthenticated && aiQuota.used == 0)
+                                  ? 'Tanpa Batas'
+                                  : 'AI ${aiQuota.weeklyUsed}/${aiQuota.weeklyLimit} mgg · ${aiQuota.monthlyUsed}/${aiQuota.monthlyLimit} bln',
                               style: GoogleFonts.inter(
                                 fontSize: 10.5,
                                 fontWeight: FontWeight.w600,
@@ -392,7 +425,7 @@ class Screen1Dashboard extends ConsumerWidget {
                 ),
               ),
               const SizedBox(height: 14),
-              // Quick Actions Row
+              // Quick Actions Row (2 Primary Actions for Initial Release)
               Row(
                 children: [
                   Expanded(
@@ -403,15 +436,7 @@ class Screen1Dashboard extends ConsumerWidget {
                       onTap: () => context.push('/catat-manual'),
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: _QuickActionButton(
-                      label: 'Foto Struk',
-                      icon: Icons.camera_alt_outlined,
-                      onTap: () => context.push('/foto-struk'),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: 10),
                   Expanded(
                     child: _QuickActionButton(
                       label: 'Buat Nota',

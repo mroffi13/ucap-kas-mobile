@@ -30,6 +30,17 @@ class AuthUser {
     return '${parts.first[0]}${parts[1][0]}'.toUpperCase();
   }
 
+  String get shortPlanBadge {
+    switch (planTier) {
+      case 'umkm_pro':
+        return 'Paket Usaha Pro';
+      case 'keluarga_pro':
+        return 'Paket Keluarga Pro';
+      default:
+        return 'Paket Starter';
+    }
+  }
+
   String get planLabel {
     switch (planTier) {
       case 'umkm_pro':
@@ -37,7 +48,7 @@ class AuthUser {
       case 'keluarga_pro':
         return 'Paket Kas Rumah Tangga Pro';
       default:
-        return 'Paket Starter Gratis · Kuota AI 3x/hari';
+        return 'Paket Starter Gratis · AI 4x/mgg (15x/bln)';
     }
   }
 
